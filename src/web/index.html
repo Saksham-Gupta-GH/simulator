@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- Premium Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome for visual iconography -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- SEO Optimization -->
+    <title>NeuroDrive AI | Self-Driving C++ Neural Network & Genetic Evolution Sandbox</title>
+    <meta name="description" content="A real-time interactive self-driving car simulation using modern C++20, neural networks, genetic algorithms, and custom O(1) grid raycasting, served instantly in the browser via WebAssembly.">
+    <meta name="theme-color" content="#020617">
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    
+    <!-- Visual Gradient Ambient Blobs -->
+    <div class="blob-glow blob-cyan"></div>
+    <div class="blob-glow blob-purple"></div>
+
+    <div class="app-container">
+        
+        <!-- Header Banner -->
+        <header class="app-header">
+            <div class="brand">
+                <div class="logo-icon">
+                    <i class="fa-solid fa-microchip"></i>
+                </div>
+                <div class="brand-text">
+                    <h1>NEURODRIVE AI</h1>
+                    <span class="sub-logo">C++ &bull; WebAssembly &bull; Neural Net Playground</span>
+                </div>
+            </div>
+            
+            <div class="portfolio-links">
+                <a href="https://github.com/Saksham-Gupta-GH" target="_blank" class="glass-btn btn-github">
+                    <i class="fa-brands fa-github"></i> github.com/Saksham-Gupta-GH
+                </a>
+                <span class="badge badge-wasm">Wasm Core Active</span>
+            </div>
+        </header>
+
+        <!-- Main Grid Layout -->
+        <main class="app-body">
+            
+            <!-- Left Sidebar Controls Dock (Glassmorphic) -->
+            <aside class="sidebar glass-card">
+                <h2 class="section-title"><i class="fa-solid fa-gamepad"></i> Telemetry Dock</h2>
+                
+                <!-- Track Brush Tools -->
+                <div class="control-group">
+                    <label class="group-label">Interactive Brushes</label>
+                    <div class="brush-selector">
+                        <button class="brush-btn active" id="brush-road" data-brush="road">
+                            <i class="fa-solid fa-road"></i>
+                            <span>Road</span>
+                        </button>
+                        <button class="brush-btn" id="brush-wall" data-brush="wall">
+                            <i class="fa-solid fa-circle-nodes"></i>
+                            <span>Obstacle</span>
+                        </button>
+                        <button class="brush-btn" id="brush-eraser" data-brush="erase">
+                            <i class="fa-solid fa-eraser"></i>
+                            <span>Erase</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Preloaded Maps -->
+                <div class="control-group">
+                    <label class="group-label">Presets Circuits</label>
+                    <div class="map-presets">
+                        <button class="map-btn active" id="map-oval">Grand Prix</button>
+                        <button class="map-btn" id="map-hairpin">Hairpin Twist</button>
+                        <button class="map-btn" id="map-obstacle">Maze Run</button>
+                        <button class="map-btn" id="map-blank">Blank Sandbox</button>
+                    </div>
+                </div>
+
+                <!-- Speed Dial Multiplex -->
+                <div class="control-group">
+                    <div class="label-with-val">
+                        <label class="group-label">Simulation Speed</label>
+                        <span class="slider-value" id="val-speed">1x Normal</span>
+                    </div>
+                    <div class="speed-selector">
+                        <button class="speed-btn active" data-speed="1">1x</button>
+                        <button class="speed-btn" data-speed="2">2x</button>
+                        <button class="speed-btn" data-speed="5">5x</button>
+                        <button class="speed-btn" data-speed="10">10x</button>
+                    </div>
+                </div>
+
+                <!-- Mutation Sliders -->
+                <div class="control-group">
+                    <h3 class="subsection-title">Genetic Algorithm Constants</h3>
+                    
+                    <div class="slider-block">
+                        <div class="label-with-val">
+                            <span class="slider-label">Mutation Rate (Chance)</span>
+                            <span class="slider-value" id="val-mutation-rate">8%</span>
+                        </div>
+                        <input type="range" id="param-mutation-rate" min="0.01" max="0.50" step="0.01" value="0.08">
+                    </div>
+
+                    <div class="slider-block">
+                        <div class="label-with-val">
+                            <span class="slider-label">Mutation Magnitude (Wiggle)</span>
+                            <span class="slider-value" id="val-mutation-amount">0.20</span>
+                        </div>
+                        <input type="range" id="param-mutation-amount" min="0.02" max="0.50" step="0.01" value="0.20">
+                    </div>
+                </div>
+
+                <!-- Action Controls Grid -->
+                <div class="btn-grid">
+                    <button class="glass-btn btn-primary" id="btn-evolve">
+                        <i class="fa-solid fa-forward-fast"></i> Evolve Next Gen
+                    </button>
+                    <button class="glass-btn btn-warning" id="btn-shock">
+                        <i class="fa-solid fa-bolt-lightning"></i> Zap / Mutate Brains
+                    </button>
+                    <button class="glass-btn btn-danger" id="btn-clear-track">
+                        <i class="fa-solid fa-trash-can"></i> Reset Sandbox
+                    </button>
+                </div>
+
+            </aside>
+
+            <!-- Center Stage: Simulation Canvas and HUD Badges -->
+            <section class="canvas-panel glass-card">
+                
+                <!-- Overlay Telemetry Stats HUD -->
+                <div class="stats-overlay">
+                    <div class="stat-badge">
+                        <span class="stat-label">Gen:</span>
+                        <span class="stat-val text-green" id="stat-gen">1</span>
+                    </div>
+                    <div class="stat-badge">
+                        <span class="stat-label">Alive:</span>
+                        <span class="stat-val text-cyan" id="stat-alive">0 / 30</span>
+                    </div>
+                    <div class="stat-badge">
+                        <span class="stat-label">Max Fitness:</span>
+                        <span class="stat-val text-orange" id="stat-fitness">0.00</span>
+                    </div>
+                </div>
+
+                <!-- Core Canvas Sandbox -->
+                <div class="canvas-wrapper">
+                    <canvas id="sim-canvas" width="800" height="600"></canvas>
+                    <div class="paint-tooltip">
+                        <i class="fa-solid fa-paintbrush"></i> Left-click and drag to paint walls/roads dynamically!
+                    </div>
+                </div>
+
+                <!-- Right/Bottom Panel: Live Neural Net Brain Synapses Viewer -->
+                <div class="brain-debugger">
+                    <div class="hud-header">
+                        <div class="hud-title">
+                            <i class="fa-solid fa-brain text-cyan"></i>
+                            <h3>Visual AI Brain Map (Best Car Telemetry)</h3>
+                        </div>
+                        <span class="badge badge-brain">Active Neurons</span>
+                    </div>
+                    
+                    <div class="hud-content">
+                        <!-- Canvas dedicated to rendering neural net graph nodes -->
+                        <div class="network-canvas-wrapper">
+                            <canvas id="network-canvas" width="400" height="240"></canvas>
+                        </div>
+
+                        <!-- Technical Information panel -->
+                        <div class="brain-intel">
+                            <p id="intel-description">
+                                Displaying the neural synapses of the <strong class="text-cyan">current leader</strong>. Left inputs (5 sensors) evaluate distance, hidden layers process nodes, and right outputs trigger steering/acceleration. Glowing lines indicate positive synapses, dimmer lines represent negative weights.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+            </section>
+
+        </main>
+
+        <!-- Footer bar -->
+        <footer class="app-footer glass-card">
+            <div class="footer-meta">
+                <i class="fa-solid fa-gear"></i>
+                <span>C++ Core using <strong>Contiguous float arrays blits</strong>. Mutating 5 inputs &bull; 6 hidden &bull; 2 outputs.</span>
+            </div>
+            <div class="footer-badge">
+                <i class="fa-solid fa-microchip text-cyan"></i> Zero-Copy Memory Active
+            </div>
+        </footer>
+
+    </div>
+
+    <!-- Script loading for compiled WebAssembly modules & client app glue -->
+    <script src="wasm/fluid_sim.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

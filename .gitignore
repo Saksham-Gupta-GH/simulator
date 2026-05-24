@@ -1,0 +1,18 @@
+# Node dependencies
+node_modules/
+dist/
+
+# macOS system files
+.DS_Store
+
+# Native build directories & temporary compilers files
+build/
+*.o
+*.out
+*.exe
+cmake_install.cmake
+CMakeCache.txt
+CMakeFiles/
+Makefile
+
+# Wasm generated modules (Note: We DO want to track public/wasm/ fluid_sim.js & fluid_sim.wasm since they are serving static deployment assets, but we can exclude other build temps if any).

@@ -1,0 +1,24 @@
+{
+  "name": "cpp-fluid-physics-sandbox",
+  "version": "1.0.0",
+  "description": "High-performance real-time particle and fluid physics simulation written in C++ and compiled to WebAssembly",
+  "main": "src/web/app.js",
+  "scripts": {
+    "dev": "vite src/web --host",
+    "build": "vite build src/web --outDir ../../dist --emptyOutDir",
+    "compile": "mkdir -p src/web/public/wasm && /opt/homebrew/bin/emcc src/cpp/nn.cpp src/cpp/car.cpp src/cpp/simulation.cpp src/cpp/bindings.cpp -o src/web/public/wasm/fluid_sim.js -O3 -s WASM=1 -s ALLOW_MEMORY_GROWTH=1 -s MODULARIZE=1 -s EXPORT_NAME='createFluidSimModule' --bind"
+  },
+  "keywords": [
+    "c++",
+    "webassembly",
+    "wasm",
+    "physics-engine",
+    "fluid-dynamics",
+    "emscripten"
+  ],
+  "author": "Saksham Gupta",
+  "license": "MIT",
+  "devDependencies": {
+    "vite": "^5.2.0"
+  }
+}
