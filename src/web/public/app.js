@@ -37,7 +37,14 @@ let colors = {
 // --------------------------------------------------------------------------
 // WebAssembly Hydration & Simulation Initialization
 // --------------------------------------------------------------------------
-createFluidSimModule().then(ModuleInstance => {
+createFluidSimModule({
+    locateFile: function(path) {
+        if (path.endsWith('.wasm')) {
+            return 'wasm/' + path; // Explicitly map to static sub-folder
+        }
+        return path;
+    }
+}).then(ModuleInstance => {
     Module = ModuleInstance;
     console.log("C++ AI Neural Physics Core Hydrated Successfully!");
 

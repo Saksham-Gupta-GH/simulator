@@ -130,7 +130,6 @@ void Simulation::evolveNextGeneration() {
 void Simulation::reset() {
     generationCount = 1;
     bestCarIdx = 0;
-    std::fill(gridData.begin(), gridData.end(), 0); // Wipe all wall obstacles
     
     // Wipe and reset all cars
     cars.clear();
