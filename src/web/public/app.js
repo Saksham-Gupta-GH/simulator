@@ -2,7 +2,7 @@ let moduleRef = null;
 let solver = null;
 
 // Config
-const N = 200;
+let N = 200;
 const iter = 16;
 const dt = 0.1;
 let diff = 0.0;
@@ -14,14 +14,15 @@ const canvas = document.getElementById('fluid-canvas');
 const ctx = canvas.getContext('2d');
 canvas.width = N;
 canvas.height = N;
+let imgData = ctx.createImageData(N, N);
 
-const imgData = ctx.createImageData(N, N);
 const fpsCounter = document.getElementById('fps-counter');
 const srcCountEl = document.getElementById('src-count');
 const emittersListEl = document.getElementById('emitters-list');
 
 // State
 let isDrawing = false;
+let simRunning = true;
 let activeTool = 'draw'; 
 let brushSize = 10;
 let shapeRot = 0; // Degrees
@@ -30,7 +31,7 @@ let lastMousePos = null;
 
 // Sources State
 let sources = [];
-let sourceIdCounter = 0;
+let sourceIdCounter = 1;
 
 function getCanvasPos(e) {
     const rect = canvas.getBoundingClientRect();
@@ -126,7 +127,7 @@ function placeSource(cx, cy) {
             type: 'point',
             x: cx,
             y: cy,
-            dir: shapeRot, // initial direction based on UI rot
+            dir: shapeRot, 
             speed: 50
         });
     } else if (activeTool === 'src-line') {
@@ -136,8 +137,8 @@ function placeSource(cx, cy) {
             x: cx,
             y: cy,
             length: brushSize * 4,
-            angle: shapeRot, // orientation of the line itself
-            dir: shapeRot - 90, // default flow direction perpendicular to line
+            angle: shapeRot, // Line physical orientation
+            dir: shapeRot - 90, // Flow direction
             speed: 50
         });
     }
@@ -158,8 +159,8 @@ function renderEmittersUI() {
         const title = document.createElement('div');
         title.className = 'emitter-title';
         title.innerHTML = src.type === 'point' 
-            ? '<i class="fa-solid fa-location-dot" style="color:#1a73e8;"></i> Point Source'
-            : '<i class="fa-solid fa-grip-lines-vertical" style="color:#1a73e8;"></i> Line Source';
+            ? `<i class="fa-solid fa-location-dot" style="color:#1a73e8;"></i> Point Source #${src.id}`
+            : `<i class="fa-solid fa-grip-lines-vertical" style="color:#1a73e8;"></i> Line Source #${src.id}`;
 
         const delBtn = document.createElement('button');
         delBtn.className = 'emitter-delete';
@@ -203,14 +204,28 @@ function renderEmittersUI() {
         });
         card.appendChild(dirGroup);
 
-        // Length Slider (Line Only)
+        // Line Orientation and Length Sliders
         if (src.type === 'line') {
+            const angleGroup = document.createElement('div');
+            angleGroup.className = 'slider-group';
+            angleGroup.style.marginBottom = '8px';
+            angleGroup.innerHTML = `
+                <label>Line Orientation <span><span id="angle-val-${src.id}">${src.angle}</span>°</span></label>
+                <input type="range" min="-180" max="180" value="${src.angle}">
+            `;
+            const angleSlider = angleGroup.querySelector('input');
+            angleSlider.addEventListener('input', (e) => {
+                src.angle = parseInt(e.target.value);
+                angleGroup.querySelector(`#angle-val-${src.id}`).innerText = src.angle;
+            });
+            card.appendChild(angleGroup);
+
             const lenGroup = document.createElement('div');
             lenGroup.className = 'slider-group';
             lenGroup.style.marginBottom = '0';
             lenGroup.innerHTML = `
                 <label>Line Length <span><span id="len-val-${src.id}">${src.length}</span>px</span></label>
-                <input type="range" min="10" max="300" value="${src.length}">
+                <input type="range" min="10" max="400" value="${src.length}">
             `;
             const lenSlider = lenGroup.querySelector('input');
             lenSlider.addEventListener('input', (e) => {
@@ -233,8 +248,10 @@ function applySources() {
         const vy = Math.sin(radDir) * src.speed;
         
         if (src.type === 'point') {
-            solver.addDensity(src.x, src.y, globalDensity);
-            solver.addVelocity(src.x, src.y, vx, vy);
+            if(src.x >=0 && src.x < N && src.y >= 0 && src.y < N) {
+                solver.addDensity(src.x, src.y, globalDensity);
+                solver.addVelocity(src.x, src.y, vx, vy);
+            }
         } else if (src.type === 'line') {
             const radAngle = (src.angle * Math.PI) / 180;
             const cosA = Math.cos(radAngle);
@@ -256,6 +273,10 @@ function applySources() {
 // Render overlay UI directly on the canvas
 function drawOverlay() {
     ctx.lineWidth = 2;
+    ctx.font = "bold 14px Roboto";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+
     for (const src of sources) {
         if (src.type === 'point') {
             // Draw Circle
@@ -263,6 +284,10 @@ function drawOverlay() {
             ctx.arc(src.x, src.y, 4, 0, Math.PI*2);
             ctx.fillStyle = '#1a73e8';
             ctx.fill();
+            
+            // Draw ID Text
+            ctx.fillStyle = "#1a73e8";
+            ctx.fillText(src.id, src.x - 12, src.y - 12);
             
             // Draw Direction Arrow
             const radDir = (src.dir * Math.PI) / 180;
@@ -294,6 +319,10 @@ function drawOverlay() {
             ctx.lineWidth = 3;
             ctx.stroke();
 
+            // Draw ID Text
+            ctx.fillStyle = "#1a73e8";
+            ctx.fillText(src.id, src.x, src.y - 15);
+
             // Draw multiple direction arrows originating from the line
             ctx.lineWidth = 1;
             ctx.strokeStyle = 'rgba(255,255,255,0.7)';
@@ -314,6 +343,37 @@ function drawOverlay() {
 }
 
 function initControls() {
+    const playBtn = document.getElementById('btn-play-pause');
+    const resSelect = document.getElementById('grid-res');
+    
+    playBtn.addEventListener('click', () => {
+        simRunning = !simRunning;
+        if (simRunning) {
+            playBtn.innerHTML = '<i class="fa-solid fa-pause"></i> Pause';
+            playBtn.classList.add('active');
+        } else {
+            playBtn.innerHTML = '<i class="fa-solid fa-play"></i> Play';
+            playBtn.classList.remove('active');
+        }
+    });
+
+    resSelect.addEventListener('change', (e) => {
+        const newN = parseInt(e.target.value);
+        if (solver) {
+            solver.delete(); // Free C++ memory
+        }
+        N = newN;
+        document.getElementById('res-val').innerText = `${N}x${N}`;
+        
+        canvas.width = N;
+        canvas.height = N;
+        imgData = ctx.createImageData(N, N);
+        
+        solver = new moduleRef.FluidSolver(N, diff, visc, dt);
+        sources = [];
+        renderEmittersUI();
+    });
+
     const drawBtn = document.getElementById('btn-draw');
     const eraseBtn = document.getElementById('btn-erase');
     const clearBtn = document.getElementById('btn-clear');
@@ -399,8 +459,10 @@ function initControls() {
 function render() {
     if (!solver || !moduleRef) return;
 
-    applySources();
-    solver.step();
+    if (simRunning) {
+        applySources();
+        solver.step();
+    }
 
     const HEAPF32 = moduleRef.HEAPF32;
     const HEAPU8 = moduleRef.HEAPU8;
@@ -427,13 +489,9 @@ function render() {
             data[pxIdx + 2] = 104;
             data[pxIdx + 3] = 255;
         } else {
-            // Light background (white/gray) with Cyan fluid
-            // d maps to how cyan it gets. Background is #f8f9fa
             const dClamped = Math.min(1.0, d / 20.0);
             
-            // Background color
             const r_bg = 248, g_bg = 249, b_bg = 250;
-            // Fluid Color (Material Blue / Cyan)
             const r_fluid = 26, g_fluid = 115, b_fluid = 232;
             
             data[pxIdx] = r_bg + dClamped * (r_fluid - r_bg);       
@@ -444,14 +502,12 @@ function render() {
     }
 
     ctx.putImageData(imgData, 0, 0);
-    
-    // Draw UI Overlays (Emitters)
     drawOverlay();
 
     const now = performance.now();
     const frameTime = now - lastTime;
     lastTime = now;
-    fpsCounter.innerText = Math.round(1000 / frameTime);
+    if (simRunning) fpsCounter.innerText = Math.round(1000 / frameTime);
 
     requestAnimationFrame(render);
 }
@@ -467,7 +523,6 @@ createFluidSimModule({
     activeTool = 'src-line';
     shapeRot = 90;
     placeSource(4, N/2);
-    // Tweak properties
     sources[0].dir = 0;
     sources[0].length = 150;
     renderEmittersUI();

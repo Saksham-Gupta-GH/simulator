@@ -18,8 +18,22 @@
         <!-- Sidebar -->
         <div class="sidebar">
             <div class="control-section">
-                <h3>Global Properties</h3>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h3>Global Properties</h3>
+                    <button id="btn-play-pause" class="md-btn active" style="margin: 0; padding: 4px 12px;"><i class="fa-solid fa-pause"></i> Pause</button>
+                </div>
+                
                 <div class="slider-group">
+                    <label>Grid Resolution</label>
+                    <select id="grid-res" style="width: 100%; padding: 6px; border: 1px solid #dadce0; border-radius: 4px;">
+                        <option value="100">100x100 (Fastest)</option>
+                        <option value="200" selected>200x200 (Balanced)</option>
+                        <option value="300">300x300 (Detailed)</option>
+                        <option value="400">400x400 (Ultra HQ)</option>
+                    </select>
+                </div>
+
+                <div class="slider-group" style="margin-top: 15px;">
                     <label>Smoke Density <span><span id="prop-dens-val">100</span></span></label>
                     <input type="range" id="prop-dens" min="0" max="255" value="100">
                 </div>
@@ -70,7 +84,7 @@
                 <div class="telemetry-box">
                     <div class="telemetry-row">
                         <span>Grid Res</span>
-                        <span class="value">200x200</span>
+                        <span class="value" id="res-val">200x200</span>
                     </div>
                     <div class="telemetry-row">
                         <span>FPS</span>
