@@ -9,9 +9,21 @@ EvolutionManager::EvolutionManager(int popSize, float sX, float sY, float sAngle
     mutationRate = 0.1f;
     mutationAmount = 0.2f;
 
+    goalX = 650;
+    goalY = 150;
     for (int i = 0; i < populationSize; ++i) {
         cars.push_back(Car(startX, startY, startAngle));
     }
+}
+
+void EvolutionManager::setStart(float x, float y) {
+    startX = x;
+    startY = y;
+}
+
+void EvolutionManager::setGoal(float x, float y) {
+    goalX = x;
+    goalY = y;
 }
 
 void EvolutionManager::setTrackBoundaries(const std::vector<float>& boundaries) {
@@ -21,6 +33,14 @@ void EvolutionManager::setTrackBoundaries(const std::vector<float>& boundaries) 
 void EvolutionManager::update(float dt) {
     for (auto& car : cars) {
         car.update(trackBoundaries, dt);
+        
+        // Calculate fitness based on distance to goal
+        float dx = car.x - goalX;
+        float dy = car.y - goalY;
+        float distToGoal = std::sqrt(dx*dx + dy*dy);
+        
+        // Reward getting closer to the goal
+        car.fitness = 10000.0f / (distToGoal + 1.0f) + car.distanceTraveled * 0.1f;
     }
 
     // Populate flat array for JS rendering

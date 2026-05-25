@@ -9,6 +9,8 @@ EMSCRIPTEN_BINDINGS(ai_driving_module) {
 
     class_<EvolutionManager>("EvolutionManager")
         .constructor<int, float, float, float>()
+        .function("setStart", &EvolutionManager::setStart)
+        .function("setGoal", &EvolutionManager::setGoal)
         .function("setTrackBoundaries", &EvolutionManager::setTrackBoundaries)
         .function("update", &EvolutionManager::update)
         .function("allDead", &EvolutionManager::allDead)

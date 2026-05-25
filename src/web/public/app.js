@@ -5,11 +5,20 @@ let evoManager = null;
 let trackLines = []; // flat array [x1, y1, x2, y2, x1, y1...]
 let isDrawingWall = false;
 let currentWallStart = null;
-let activeTool = 'draw'; // 'draw' or 'erase'
+let activeTool = 'draw'; // 'draw', 'erase', 'start', 'goal'
 
 // Engine state
 let activeSpeedMultiplier = 1;
 const dt = 0.5; // Physics timestep
+
+// Start and Goal coordinates
+let startPos = { x: 150, y: 450 };
+let goalPos = { x: 650, y: 150 };
+
+// Camera System (Zoom and Pan)
+let camera = { x: 0, y: 0, zoom: 1 };
+let isPanning = false;
+let panStart = null;
 
 // UI Elements
 const canvas = document.getElementById('sim-canvas');
@@ -21,7 +30,6 @@ const genLabel = document.getElementById('stat-gen');
 const aliveLabel = document.getElementById('stat-alive');
 const fitnessLabel = document.getElementById('stat-fitness');
 
-// Basic closed loop track for default
 function createDefaultTrack() {
     trackLines = [
         100, 100, 700, 100,
@@ -36,6 +44,27 @@ function createDefaultTrack() {
     ];
 }
 
+function updateTrackInCpp() {
+    if (!evoManager || !moduleRef) return;
+    const vec = new moduleRef.VectorFloat();
+    for (let i = 0; i < trackLines.length; i++) {
+        vec.push_back(trackLines[i]);
+    }
+    evoManager.setTrackBoundaries(vec);
+    vec.delete();
+}
+
+function screenToWorld(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const screenX = (clientX - rect.left) * (canvas.width / rect.width);
+    const screenY = (clientY - rect.top) * (canvas.height / rect.height);
+    
+    // Reverse the camera transform
+    const worldX = (screenX - canvas.width/2) / camera.zoom + camera.x;
+    const worldY = (screenY - canvas.height/2) / camera.zoom + camera.y;
+    return { x: worldX, y: worldY };
+}
+
 function initControls() {
     createDefaultTrack();
 
@@ -45,23 +74,25 @@ function initControls() {
 
     document.getElementById('btn-reset-track').addEventListener('click', () => {
         trackLines = [];
-        if(evoManager) evoManager.setTrackBoundaries(new Float32Array(0));
+        updateTrackInCpp();
     });
 
     const drawBtn = document.getElementById('btn-draw-wall');
     const eraseBtn = document.getElementById('btn-draw-erase');
+    const startBtn = document.getElementById('btn-set-start');
+    const goalBtn = document.getElementById('btn-set-goal');
+    
+    const toolBtns = [drawBtn, eraseBtn, startBtn, goalBtn];
+    const setTool = (toolName, activeBtn) => {
+        activeTool = toolName;
+        toolBtns.forEach(btn => btn.classList.remove('active'));
+        activeBtn.classList.add('active');
+    };
 
-    drawBtn.addEventListener('click', () => {
-        activeTool = 'draw';
-        drawBtn.classList.add('active');
-        eraseBtn.classList.remove('active');
-    });
-
-    eraseBtn.addEventListener('click', () => {
-        activeTool = 'erase';
-        eraseBtn.classList.add('active');
-        drawBtn.classList.remove('active');
-    });
+    drawBtn.addEventListener('click', () => setTool('draw', drawBtn));
+    eraseBtn.addEventListener('click', () => setTool('erase', eraseBtn));
+    startBtn.addEventListener('click', () => setTool('start', startBtn));
+    goalBtn.addEventListener('click', () => setTool('goal', goalBtn));
 
     document.querySelectorAll('.speed-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -71,60 +102,98 @@ function initControls() {
         });
     });
 
-    // Mouse events for track drawing
+    // Panning with middle click or spacebar
     canvas.addEventListener('mousedown', (e) => {
-        const rect = canvas.getBoundingClientRect();
-        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
-        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+        if (e.button === 1 || e.shiftKey) { // Middle click or shift+click to pan
+            isPanning = true;
+            panStart = { x: e.clientX, y: e.clientY };
+            return;
+        }
+
+        const worldPos = screenToWorld(e.clientX, e.clientY);
         
         if (activeTool === 'draw') {
             isDrawingWall = true;
-            currentWallStart = {x, y};
+            currentWallStart = worldPos;
         } else if (activeTool === 'erase') {
-            // Very simple eraser: remove lines near click
-            const eraseRadius = 20;
+            const eraseRadius = 20 / camera.zoom;
             let newLines = [];
             for(let i=0; i<trackLines.length; i+=4) {
                 const mx = (trackLines[i] + trackLines[i+2]) / 2;
                 const my = (trackLines[i+1] + trackLines[i+3]) / 2;
-                const dist = Math.sqrt((mx-x)*(mx-x) + (my-y)*(my-y));
+                const dist = Math.sqrt((mx-worldPos.x)**2 + (my-worldPos.y)**2);
                 if (dist > eraseRadius) {
                     newLines.push(trackLines[i], trackLines[i+1], trackLines[i+2], trackLines[i+3]);
                 }
             }
             trackLines = newLines;
-            if(evoManager) evoManager.setTrackBoundaries(new Float32Array(trackLines));
+            updateTrackInCpp();
+        } else if (activeTool === 'start') {
+            startPos = worldPos;
+            if(evoManager) evoManager.setStart(startPos.x, startPos.y);
+        } else if (activeTool === 'goal') {
+            goalPos = worldPos;
+            if(evoManager) evoManager.setGoal(goalPos.x, goalPos.y);
         }
     });
 
     canvas.addEventListener('mousemove', (e) => {
+        if (isPanning) {
+            const dx = e.clientX - panStart.x;
+            const dy = e.clientY - panStart.y;
+            camera.x -= dx / camera.zoom;
+            camera.y -= dy / camera.zoom;
+            panStart = { x: e.clientX, y: e.clientY };
+            return;
+        }
+
         if (!isDrawingWall) return;
-        const rect = canvas.getBoundingClientRect();
-        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
-        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
-        
-        // Render preview (handled in draw loop by reading currentWallStart)
-        currentWallStart.currentX = x;
-        currentWallStart.currentY = y;
+        const worldPos = screenToWorld(e.clientX, e.clientY);
+        currentWallStart.currentX = worldPos.x;
+        currentWallStart.currentY = worldPos.y;
     });
 
     canvas.addEventListener('mouseup', (e) => {
+        if (isPanning) {
+            isPanning = false;
+            return;
+        }
         if (isDrawingWall && currentWallStart) {
-            const rect = canvas.getBoundingClientRect();
-            const x = (e.clientX - rect.left) * (canvas.width / rect.width);
-            const y = (e.clientY - rect.top) * (canvas.height / rect.height);
-            
-            trackLines.push(currentWallStart.x, currentWallStart.y, x, y);
-            if(evoManager) {
-                // Float32Array conversion for C++
-                const f32 = new Float32Array(trackLines);
-                evoManager.setTrackBoundaries(f32);
-            }
-            
+            const worldPos = screenToWorld(e.clientX, e.clientY);
+            trackLines.push(currentWallStart.x, currentWallStart.y, worldPos.x, worldPos.y);
+            updateTrackInCpp();
             isDrawingWall = false;
             currentWallStart = null;
         }
     });
+    
+    // Zooming
+    canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const zoomIntensity = 0.1;
+        const wheel = e.deltaY < 0 ? 1 : -1;
+        
+        // Zoom towards mouse
+        const rect = canvas.getBoundingClientRect();
+        const screenX = (e.clientX - rect.left) * (canvas.width / rect.width);
+        const screenY = (e.clientY - rect.top) * (canvas.height / rect.height);
+        
+        const worldX = (screenX - canvas.width/2) / camera.zoom + camera.x;
+        const worldY = (screenY - canvas.height/2) / camera.zoom + camera.y;
+
+        const zoomFactor = Math.exp(wheel * zoomIntensity);
+        camera.zoom *= zoomFactor;
+        
+        // Clamp zoom
+        if(camera.zoom < 0.1) camera.zoom = 0.1;
+        if(camera.zoom > 10) camera.zoom = 10;
+        
+        camera.x = worldX - (screenX - canvas.width/2) / camera.zoom;
+        camera.y = worldY - (screenY - canvas.height/2) / camera.zoom;
+    });
+    
+    // Prevent context menu
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
 }
 
 function drawNetwork(weightsFlat) {
@@ -137,14 +206,11 @@ function drawNetwork(weightsFlat) {
     let topology = [];
     for(let i=0; i<numLayers; i++) topology.push(weightsFlat[1+i]);
     
-    let ptr = 1 + numLayers;
-    
-    // Draw logic
     const paddingX = 40;
     const paddingY = 20;
     const spacingX = (netCanvas.width - 2 * paddingX) / (numLayers - 1);
     
-    let nodePositions = []; // layer -> neuron -> {x, y}
+    let nodePositions = []; 
     
     for (let l = 0; l < numLayers; l++) {
         let layerPos = [];
@@ -157,7 +223,6 @@ function drawNetwork(weightsFlat) {
             const y = startY + n * spacingY;
             layerPos.push({x, y});
             
-            // Draw nodes
             netCtx.beginPath();
             netCtx.arc(x, y, 6, 0, Math.PI * 2);
             netCtx.fillStyle = l === 0 ? '#00ffff' : (l === numLayers - 1 ? '#ff00ff' : '#8a2be2');
@@ -167,8 +232,6 @@ function drawNetwork(weightsFlat) {
         nodePositions.push(layerPos);
     }
     
-    // We only have weights, so drawing accurate active lines requires full brain eval.
-    // Let's just draw connecting lines to look cool.
     netCtx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
     netCtx.lineWidth = 1;
     for (let l = 1; l < numLayers; l++) {
@@ -184,6 +247,11 @@ function drawNetwork(weightsFlat) {
 }
 
 function startSimulationLoop() {
+    // Initial camera position centered on default track
+    camera.x = 400;
+    camera.y = 300;
+    camera.zoom = 0.8;
+
     function frame() {
         try {
             if (!evoManager) { requestAnimationFrame(frame); return; }
@@ -199,9 +267,16 @@ function startSimulationLoop() {
             ctx.fillStyle = '#05020a';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+            ctx.save();
+            // Apply Camera Transform
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.scale(camera.zoom, camera.zoom);
+            ctx.translate(-camera.x, -camera.y);
+
             // Draw Track
             ctx.strokeStyle = '#00ffff';
             ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
             ctx.shadowBlur = 10;
             ctx.shadowColor = '#00ffff';
             for (let i = 0; i < trackLines.length; i += 4) {
@@ -220,7 +295,40 @@ function startSimulationLoop() {
                 ctx.lineTo(currentWallStart.currentX, currentWallStart.currentY);
                 ctx.stroke();
             }
-            ctx.shadowBlur = 0; // Turn off glow for cars for performance
+            ctx.shadowBlur = 0; 
+            
+            // Draw Start Point
+            ctx.fillStyle = '#ff00ff';
+            ctx.shadowColor = '#ff00ff';
+            ctx.shadowBlur = 15;
+            ctx.beginPath();
+            ctx.arc(startPos.x, startPos.y, 10, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw Goal Point
+            ctx.fillStyle = '#ffff00';
+            ctx.shadowColor = '#ffff00';
+            ctx.shadowBlur = 25;
+            ctx.beginPath();
+            // Draw a star shape for the goal
+            const starRot = Math.PI / 2 * 3;
+            let sx = goalPos.x;
+            let sy = goalPos.y;
+            let step = Math.PI / 5;
+            ctx.moveTo(goalPos.x, goalPos.y - 15);
+            for(let i=0; i<5; i++){
+                sx = goalPos.x + Math.cos(starRot + i * step * 2) * 15;
+                sy = goalPos.y + Math.sin(starRot + i * step * 2) * 15;
+                ctx.lineTo(sx, sy);
+                sx = goalPos.x + Math.cos(starRot + i * step * 2 + step) * 7;
+                sy = goalPos.y + Math.sin(starRot + i * step * 2 + step) * 7;
+                ctx.lineTo(sx, sy);
+            }
+            ctx.lineTo(goalPos.x, goalPos.y - 15);
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.shadowBlur = 0;
 
             // Read Car Data
             const ptr = evoManager.getCarDataPtr();
@@ -245,14 +353,14 @@ function startSimulationLoop() {
                     continue;
                 }
                 
-                if (bestCarIdx === -1) bestCarIdx = i; // First alive car is visually "lead"
+                if (bestCarIdx === -1) bestCarIdx = i; // First alive car
                 
                 ctx.save();
                 ctx.translate(x, y);
                 ctx.rotate(angle);
                 
                 // Draw Car Body
-                ctx.fillStyle = i === 0 ? '#ff00ff' : '#8a2be2'; // Best car is pink
+                ctx.fillStyle = i === 0 ? '#ff00ff' : '#8a2be2'; 
                 ctx.fillRect(-15, -25, 30, 50);
                 
                 // Draw "Headlights"
@@ -263,7 +371,7 @@ function startSimulationLoop() {
                 ctx.restore();
                 
                 // Draw Rays for Best Car
-                if (i === 0) { // The elite car
+                if (i === 0) { 
                     ctx.strokeStyle = 'rgba(0, 255, 255, 0.4)';
                     ctx.lineWidth = 1;
                     const raySpread = Math.PI / 2;
@@ -279,12 +387,13 @@ function startSimulationLoop() {
                         ctx.lineTo(ex, ey);
                         ctx.stroke();
                         
-                        // Hit dot
                         ctx.fillStyle = '#ff00ff';
                         ctx.fillRect(ex-2, ey-2, 4, 4);
                     }
                 }
             }
+
+            ctx.restore(); // Restore camera transform
 
             // Update Telemetry
             genLabel.innerText = evoManager.generation;
@@ -293,7 +402,6 @@ function startSimulationLoop() {
             
             // Draw Brain
             if (numCars > 0) {
-                // Convert std::vector to JS Array
                 const brainVec = evoManager.getBestBrainWeights();
                 const brainArr = [];
                 for(let i=0; i<brainVec.size(); i++) {
@@ -320,14 +428,11 @@ createFluidSimModule({
 }).then((module) => {
     moduleRef = module;
     
-    // Spawn 100 cars at position 150, 450 facing UP (angle 0)
-    evoManager = new module.EvolutionManager(100, 150, 450, 0);
+    evoManager = new module.EvolutionManager(100, startPos.x, startPos.y, 0);
+    evoManager.setGoal(goalPos.x, goalPos.y);
     
     initControls();
-    
-    // Set initial track
-    const f32 = new Float32Array(trackLines);
-    evoManager.setTrackBoundaries(f32);
+    updateTrackInCpp();
     
     console.log("Neon Drive AI Loaded!");
     startSimulationLoop();

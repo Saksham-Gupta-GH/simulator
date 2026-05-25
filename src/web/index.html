@@ -61,16 +61,24 @@
                 </div>
 
                 <div class="control-group">
-                    <label class="group-label">Draw Track Walls</label>
+                    <label class="group-label">Map Design Tools</label>
                     <div class="paint-tooltip" style="margin-bottom: 10px;">
-                        Use your mouse to draw custom track boundaries on the canvas!
+                        Draw walls or place the Start and Goal! Scroll to zoom, Middle-click to pan.
                     </div>
-                    <div class="btn-grid">
+                    <div class="btn-grid" style="grid-template-columns: 1fr 1fr; margin-bottom: 10px;">
                         <button class="retro-btn btn-cyan active" id="btn-draw-wall">
-                            <i class="fa-solid fa-pen"></i> Draw Wall
+                            <i class="fa-solid fa-pen"></i> Wall
                         </button>
                         <button class="retro-btn btn-cyan" id="btn-draw-erase">
-                            <i class="fa-solid fa-eraser"></i> Eraser
+                            <i class="fa-solid fa-eraser"></i> Erase
+                        </button>
+                    </div>
+                    <div class="btn-grid" style="grid-template-columns: 1fr 1fr;">
+                        <button class="retro-btn btn-primary" id="btn-set-start">
+                            <i class="fa-solid fa-flag"></i> Start
+                        </button>
+                        <button class="retro-btn btn-warning" id="btn-set-goal">
+                            <i class="fa-solid fa-star"></i> Goal
                         </button>
                     </div>
                 </div>

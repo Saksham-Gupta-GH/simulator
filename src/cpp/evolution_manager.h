@@ -7,6 +7,7 @@
 class EvolutionManager {
 private:
     float startX, startY, startAngle;
+    float goalX, goalY;
     int populationSize;
     float mutationRate;
     float mutationAmount;
@@ -21,6 +22,8 @@ public:
 
     EvolutionManager(int popSize, float sX, float sY, float sAngle);
 
+    void setStart(float x, float y);
+    void setGoal(float x, float y);
     void setTrackBoundaries(const std::vector<float>& boundaries);
     void update(float dt);
     
