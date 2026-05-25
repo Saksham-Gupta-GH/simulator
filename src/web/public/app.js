@@ -149,36 +149,25 @@ function initControls() {
 
     // 9. Canvas drawing events setup
     const canvas = document.getElementById('sim-canvas');
-    canvas.addEventListener('mousedown', (e) => {
+    // 9. Unified Pointer Events (handles mouse, touch, and stylus natively)
+    canvas.addEventListener('pointerdown', (e) => {
         isDrawing = true;
+        canvas.setPointerCapture(e.pointerId); // Keep drawing even if cursor exits canvas
         handleDraw(e);
     });
     
-    canvas.addEventListener('mousemove', (e) => {
+    canvas.addEventListener('pointermove', (e) => {
         if (isDrawing) {
             handleDraw(e);
         }
     });
 
-    window.addEventListener('mouseup', () => {
+    canvas.addEventListener('pointerup', (e) => {
         isDrawing = false;
+        canvas.releasePointerCapture(e.pointerId);
     });
 
-    // Support mobile touch gestures
-    canvas.addEventListener('touchstart', (e) => {
-        isDrawing = true;
-        handleDraw(e.touches[0]);
-        e.preventDefault();
-    });
-    
-    canvas.addEventListener('touchmove', (e) => {
-        if (isDrawing) {
-            handleDraw(e.touches[0]);
-            e.preventDefault();
-        }
-    });
-
-    canvas.addEventListener('touchend', () => {
+    canvas.addEventListener('pointercancel', (e) => {
         isDrawing = false;
     });
 }
