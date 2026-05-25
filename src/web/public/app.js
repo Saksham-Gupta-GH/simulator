@@ -712,24 +712,20 @@ createFluidSimModule({
     
     solver = new module.FluidSolver(N, diff, visc, dt);
     
-    // Default setup
+    // Default setup: Wind tunnel flowing from left to right
     activeTool = 'src-line';
-    shapeRot = 90;
+    shapeRot = 90; // vertical line
     placeSource(2, N/2);
-    sources[0].dir = 0;
-    sources[0].length = 150;
-    
-    // Add a red point source cutting through it
-    activeTool = 'src-point';
-    shapeRot = 90;
-    placeSource(N/2, 2);
-    sources[1].color = {r: 217, g: 48, b: 37}; // Material Red
-    sources[1].speed = 100;
+    sources[0].dir = 0; // horizontal flow
+    sources[0].length = N * 0.8; 
+    sources[0].speed = 60;
     renderEmittersUI();
     
-    shapeRot = -20;
+    // Solid square obstacle in the middle
+    shapeRot = 0;
     activeTool = 'rect';
-    stampShapeBounds(40, 60, 100, 140);
+    shapeColor = {r: 95, g: 99, b: 104};
+    stampShapeBounds(N/2 - 20, N/2 - 20, N/2 + 20, N/2 + 20);
     
     brushSize = 10;
     shapeRot = 0;
