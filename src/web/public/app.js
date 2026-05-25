@@ -622,6 +622,9 @@ function render() {
     const densityG = new Float32Array(HEAPF32.buffer, densityGPtr, size);
     const densityB = new Float32Array(HEAPF32.buffer, densityBPtr, size);
     const obsArray = new Uint8Array(HEAPU8.buffer, obsPtr, size);
+    const obsR = new Uint8Array(HEAPU8.buffer, solver.getObsRPtr(), size);
+    const obsG = new Uint8Array(HEAPU8.buffer, solver.getObsGPtr(), size);
+    const obsB = new Uint8Array(HEAPU8.buffer, solver.getObsBPtr(), size);
 
     const data = imgData.data;
     const obsData = obsImgData.data;
