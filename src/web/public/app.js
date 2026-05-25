@@ -1,425 +1,153 @@
 let moduleRef = null;
-let evoManager = null;
+let solver = null;
 
-// Track bounds
-let trackLines = []; // flat array [x1, y1, x2, y2, x1, y1...]
-let isDrawingWall = false;
-let currentWallStart = null;
-let activeTool = 'draw'; // 'draw', 'erase', 'start', 'goal'
-
-// Engine state
-let activeSpeedMultiplier = 1;
-const dt = 0.5; // Physics timestep
-
-// Start and Goal coordinates
-let startPos = { x: 150, y: 450 };
-let goalPos = { x: 650, y: 150 };
-
-// Camera System (Zoom and Pan)
-let camera = { x: 0, y: 0, zoom: 1 };
-let isPanning = false;
-let panStart = null;
+// Config
+const N = 200;
+const iter = 16;
+const dt = 0.1;
+const diff = 0.0;
+const visc = 0.0000001;
 
 // UI Elements
-const canvas = document.getElementById('sim-canvas');
+const canvas = document.getElementById('fluid-canvas');
 const ctx = canvas.getContext('2d');
-const netCanvas = document.getElementById('network-canvas');
-const netCtx = netCanvas.getContext('2d');
+// Canvas CSS size is handled by Flexbox, internal resolution is N x N
+canvas.width = N;
+canvas.height = N;
 
-const genLabel = document.getElementById('stat-gen');
-const aliveLabel = document.getElementById('stat-alive');
-const fitnessLabel = document.getElementById('stat-fitness');
+const imgData = ctx.createImageData(N, N);
+const fpsCounter = document.getElementById('fps-counter');
 
-function createDefaultTrack() {
-    trackLines = [
-        100, 100, 700, 100,
-        700, 100, 700, 500,
-        700, 500, 100, 500,
-        100, 500, 100, 100,
-        
-        200, 200, 600, 200,
-        600, 200, 600, 400,
-        600, 400, 200, 400,
-        200, 400, 200, 200
-    ];
-}
+// State
+let isDrawing = false;
+let activeTool = 'draw'; // 'draw' or 'erase'
+let brushSize = 10;
+let lastTime = performance.now();
 
-function updateTrackInCpp() {
-    if (!evoManager || !moduleRef) return;
-    const vec = new moduleRef.VectorFloat();
-    for (let i = 0; i < trackLines.length; i++) {
-        vec.push_back(trackLines[i]);
-    }
-    evoManager.setTrackBoundaries(vec);
-    vec.delete();
-}
-
-function screenToWorld(clientX, clientY) {
+function getCanvasPos(e) {
     const rect = canvas.getBoundingClientRect();
-    const screenX = (clientX - rect.left) * (canvas.width / rect.width);
-    const screenY = (clientY - rect.top) * (canvas.height / rect.height);
-    
-    // Reverse the camera transform
-    const worldX = (screenX - canvas.width/2) / camera.zoom + camera.x;
-    const worldY = (screenY - canvas.height/2) / camera.zoom + camera.y;
-    return { x: worldX, y: worldY };
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+        x: Math.floor((e.clientX - rect.left) * scaleX),
+        y: Math.floor((e.clientY - rect.top) * scaleY)
+    };
+}
+
+function applyBrush(x, y) {
+    if (!solver) return;
+    const isSolid = activeTool === 'draw';
+    // Draw a circle
+    for (let i = -brushSize; i <= brushSize; i++) {
+        for (let j = -brushSize; j <= brushSize; j++) {
+            if (i*i + j*j <= brushSize*brushSize) {
+                solver.setObstacle(x + i, y + j, isSolid);
+            }
+        }
+    }
 }
 
 function initControls() {
-    createDefaultTrack();
+    const drawBtn = document.getElementById('btn-draw');
+    const eraseBtn = document.getElementById('btn-erase');
+    const clearBtn = document.getElementById('btn-clear');
+    const brushSlider = document.getElementById('brush-size');
+    const brushVal = document.getElementById('brush-size-val');
 
-    document.getElementById('btn-kill-all').addEventListener('click', () => {
-        if(evoManager) evoManager.nextGeneration();
+    drawBtn.addEventListener('click', () => {
+        activeTool = 'draw';
+        drawBtn.classList.add('active');
+        eraseBtn.classList.remove('active');
     });
 
-    document.getElementById('btn-reset-track').addEventListener('click', () => {
-        trackLines = [];
-        updateTrackInCpp();
+    eraseBtn.addEventListener('click', () => {
+        activeTool = 'erase';
+        eraseBtn.classList.add('active');
+        drawBtn.classList.remove('active');
     });
 
-    const drawBtn = document.getElementById('btn-draw-wall');
-    const eraseBtn = document.getElementById('btn-draw-erase');
-    const startBtn = document.getElementById('btn-set-start');
-    const goalBtn = document.getElementById('btn-set-goal');
-    
-    const toolBtns = [drawBtn, eraseBtn, startBtn, goalBtn];
-    const setTool = (toolName, activeBtn) => {
-        activeTool = toolName;
-        toolBtns.forEach(btn => btn.classList.remove('active'));
-        activeBtn.classList.add('active');
-    };
-
-    drawBtn.addEventListener('click', () => setTool('draw', drawBtn));
-    eraseBtn.addEventListener('click', () => setTool('erase', eraseBtn));
-    startBtn.addEventListener('click', () => setTool('start', startBtn));
-    goalBtn.addEventListener('click', () => setTool('goal', goalBtn));
-
-    document.querySelectorAll('.speed-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            activeSpeedMultiplier = parseInt(btn.getAttribute('data-speed'));
-        });
+    clearBtn.addEventListener('click', () => {
+        if (solver) solver.clearObstacles();
     });
 
-    // Panning with middle click or spacebar
+    brushSlider.addEventListener('input', (e) => {
+        brushSize = parseInt(e.target.value);
+        brushVal.innerText = brushSize;
+    });
+
+    // Mouse Events
     canvas.addEventListener('mousedown', (e) => {
-        if (e.button === 1 || e.shiftKey) { // Middle click or shift+click to pan
-            isPanning = true;
-            panStart = { x: e.clientX, y: e.clientY };
-            return;
-        }
-
-        const worldPos = screenToWorld(e.clientX, e.clientY);
-        
-        if (activeTool === 'draw') {
-            isDrawingWall = true;
-            currentWallStart = worldPos;
-        } else if (activeTool === 'erase') {
-            const eraseRadius = 20 / camera.zoom;
-            let newLines = [];
-            for(let i=0; i<trackLines.length; i+=4) {
-                const mx = (trackLines[i] + trackLines[i+2]) / 2;
-                const my = (trackLines[i+1] + trackLines[i+3]) / 2;
-                const dist = Math.sqrt((mx-worldPos.x)**2 + (my-worldPos.y)**2);
-                if (dist > eraseRadius) {
-                    newLines.push(trackLines[i], trackLines[i+1], trackLines[i+2], trackLines[i+3]);
-                }
-            }
-            trackLines = newLines;
-            updateTrackInCpp();
-        } else if (activeTool === 'start') {
-            startPos = worldPos;
-            if(evoManager) evoManager.setStart(startPos.x, startPos.y);
-        } else if (activeTool === 'goal') {
-            goalPos = worldPos;
-            if(evoManager) evoManager.setGoal(goalPos.x, goalPos.y);
-        }
+        isDrawing = true;
+        const pos = getCanvasPos(e);
+        applyBrush(pos.x, pos.y);
     });
 
     canvas.addEventListener('mousemove', (e) => {
-        if (isPanning) {
-            const dx = e.clientX - panStart.x;
-            const dy = e.clientY - panStart.y;
-            camera.x -= dx / camera.zoom;
-            camera.y -= dy / camera.zoom;
-            panStart = { x: e.clientX, y: e.clientY };
-            return;
-        }
-
-        if (!isDrawingWall) return;
-        const worldPos = screenToWorld(e.clientX, e.clientY);
-        currentWallStart.currentX = worldPos.x;
-        currentWallStart.currentY = worldPos.y;
+        if (!isDrawing) return;
+        const pos = getCanvasPos(e);
+        applyBrush(pos.x, pos.y);
     });
 
-    canvas.addEventListener('mouseup', (e) => {
-        if (isPanning) {
-            isPanning = false;
-            return;
-        }
-        if (isDrawingWall && currentWallStart) {
-            const worldPos = screenToWorld(e.clientX, e.clientY);
-            trackLines.push(currentWallStart.x, currentWallStart.y, worldPos.x, worldPos.y);
-            updateTrackInCpp();
-            isDrawingWall = false;
-            currentWallStart = null;
-        }
-    });
-    
-    // Zooming
-    canvas.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        const zoomIntensity = 0.1;
-        const wheel = e.deltaY < 0 ? 1 : -1;
-        
-        // Zoom towards mouse
-        const rect = canvas.getBoundingClientRect();
-        const screenX = (e.clientX - rect.left) * (canvas.width / rect.width);
-        const screenY = (e.clientY - rect.top) * (canvas.height / rect.height);
-        
-        const worldX = (screenX - canvas.width/2) / camera.zoom + camera.x;
-        const worldY = (screenY - canvas.height/2) / camera.zoom + camera.y;
-
-        const zoomFactor = Math.exp(wheel * zoomIntensity);
-        camera.zoom *= zoomFactor;
-        
-        // Clamp zoom
-        if(camera.zoom < 0.1) camera.zoom = 0.1;
-        if(camera.zoom > 10) camera.zoom = 10;
-        
-        camera.x = worldX - (screenX - canvas.width/2) / camera.zoom;
-        camera.y = worldY - (screenY - canvas.height/2) / camera.zoom;
+    window.addEventListener('mouseup', () => {
+        isDrawing = false;
     });
     
     // Prevent context menu
     canvas.addEventListener('contextmenu', e => e.preventDefault());
 }
 
-function drawNetwork(weightsFlat) {
-    netCtx.fillStyle = '#05020a';
-    netCtx.fillRect(0, 0, netCanvas.width, netCanvas.height);
-    
-    if(!weightsFlat || weightsFlat.length < 3) return;
-    
-    let numLayers = weightsFlat[0];
-    let topology = [];
-    for(let i=0; i<numLayers; i++) topology.push(weightsFlat[1+i]);
-    
-    const paddingX = 40;
-    const paddingY = 20;
-    const spacingX = (netCanvas.width - 2 * paddingX) / (numLayers - 1);
-    
-    let nodePositions = []; 
-    
-    for (let l = 0; l < numLayers; l++) {
-        let layerPos = [];
-        const numNeurons = topology[l];
-        const spacingY = numNeurons > 1 ? (netCanvas.height - 2 * paddingY) / (numNeurons - 1) : 0;
-        const startY = numNeurons === 1 ? netCanvas.height / 2 : paddingY;
+function render() {
+    if (!solver || !moduleRef) return;
+
+    solver.step();
+
+    const HEAPF32 = moduleRef.HEAPF32;
+    const HEAPU8 = moduleRef.HEAPU8;
+
+    const densityPtr = solver.getDensityPtr();
+    const obsPtr = solver.getObstaclesPtr();
+    const size = solver.getSize();
+
+    const densityArray = new Float32Array(HEAPF32.buffer, densityPtr, size);
+    const obsArray = new Uint8Array(HEAPU8.buffer, obsPtr, size);
+
+    const data = imgData.data;
+
+    // Render loop
+    for (let i = 0; i < size; i++) {
+        const d = densityArray[i];
+        const isWall = obsArray[i];
         
-        for (let n = 0; n < numNeurons; n++) {
-            const x = paddingX + l * spacingX;
-            const y = startY + n * spacingY;
-            layerPos.push({x, y});
+        const pxIdx = i * 4;
+
+        if (isWall) {
+            // Neon pink wall
+            data[pxIdx] = 255;
+            data[pxIdx + 1] = 0;
+            data[pxIdx + 2] = 255;
+            data[pxIdx + 3] = 255;
+        } else {
+            // Cyan smoke intensity
+            // Map density to brightness
+            const brightness = Math.min(255, d * 2.5); // Boost visual intensity
             
-            netCtx.beginPath();
-            netCtx.arc(x, y, 6, 0, Math.PI * 2);
-            netCtx.fillStyle = l === 0 ? '#00ffff' : (l === numLayers - 1 ? '#ff00ff' : '#8a2be2');
-            netCtx.fill();
-            netCtx.closePath();
-        }
-        nodePositions.push(layerPos);
-    }
-    
-    netCtx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-    netCtx.lineWidth = 1;
-    for (let l = 1; l < numLayers; l++) {
-        for (let n = 0; n < topology[l]; n++) {
-            for (let prevN = 0; prevN < topology[l-1]; prevN++) {
-                netCtx.beginPath();
-                netCtx.moveTo(nodePositions[l-1][prevN].x, nodePositions[l-1][prevN].y);
-                netCtx.lineTo(nodePositions[l][n].x, nodePositions[l][n].y);
-                netCtx.stroke();
-            }
+            // Render against a very dark blue background (0, 5, 15)
+            data[pxIdx] = brightness * 0.1;       // R
+            data[pxIdx + 1] = brightness * 0.8 + 5;  // G
+            data[pxIdx + 2] = brightness * 1.0 + 15; // B
+            data[pxIdx + 3] = 255;                // A
         }
     }
-}
 
-function startSimulationLoop() {
-    // Initial camera position centered on default track
-    camera.x = 400;
-    camera.y = 300;
-    camera.zoom = 0.8;
+    ctx.putImageData(imgData, 0, 0);
 
-    function frame() {
-        try {
-            if (!evoManager) { requestAnimationFrame(frame); return; }
+    // Calculate FPS
+    const now = performance.now();
+    const frameTime = now - lastTime;
+    lastTime = now;
+    fpsCounter.innerText = Math.round(1000 / frameTime);
 
-            for (let s = 0; s < activeSpeedMultiplier; ++s) {
-                evoManager.update(dt);
-            }
-
-            if (evoManager.allDead()) {
-                evoManager.nextGeneration();
-            }
-
-            ctx.fillStyle = '#05020a';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            ctx.save();
-            // Apply Camera Transform
-            ctx.translate(canvas.width / 2, canvas.height / 2);
-            ctx.scale(camera.zoom, camera.zoom);
-            ctx.translate(-camera.x, -camera.y);
-
-            // Draw Track
-            ctx.strokeStyle = '#00ffff';
-            ctx.lineWidth = 4;
-            ctx.lineCap = 'round';
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = '#00ffff';
-            for (let i = 0; i < trackLines.length; i += 4) {
-                ctx.beginPath();
-                ctx.moveTo(trackLines[i], trackLines[i+1]);
-                ctx.lineTo(trackLines[i+2], trackLines[i+3]);
-                ctx.stroke();
-            }
-            
-            // Draw current drawing wall
-            if (isDrawingWall && currentWallStart && currentWallStart.currentX) {
-                ctx.strokeStyle = '#ff00ff';
-                ctx.shadowColor = '#ff00ff';
-                ctx.beginPath();
-                ctx.moveTo(currentWallStart.x, currentWallStart.y);
-                ctx.lineTo(currentWallStart.currentX, currentWallStart.currentY);
-                ctx.stroke();
-            }
-            ctx.shadowBlur = 0; 
-            
-            // Draw Start Point
-            ctx.fillStyle = '#ff00ff';
-            ctx.shadowColor = '#ff00ff';
-            ctx.shadowBlur = 15;
-            ctx.beginPath();
-            ctx.arc(startPos.x, startPos.y, 10, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Draw Goal Point
-            ctx.fillStyle = '#ffff00';
-            ctx.shadowColor = '#ffff00';
-            ctx.shadowBlur = 25;
-            ctx.beginPath();
-            // Draw a star shape for the goal
-            const starRot = Math.PI / 2 * 3;
-            let sx = goalPos.x;
-            let sy = goalPos.y;
-            let step = Math.PI / 5;
-            ctx.moveTo(goalPos.x, goalPos.y - 15);
-            for(let i=0; i<5; i++){
-                sx = goalPos.x + Math.cos(starRot + i * step * 2) * 15;
-                sy = goalPos.y + Math.sin(starRot + i * step * 2) * 15;
-                ctx.lineTo(sx, sy);
-                sx = goalPos.x + Math.cos(starRot + i * step * 2 + step) * 7;
-                sy = goalPos.y + Math.sin(starRot + i * step * 2 + step) * 7;
-                ctx.lineTo(sx, sy);
-            }
-            ctx.lineTo(goalPos.x, goalPos.y - 15);
-            ctx.closePath();
-            ctx.fill();
-            
-            ctx.shadowBlur = 0;
-
-            // Read Car Data
-            const ptr = evoManager.getCarDataPtr();
-            const size = evoManager.getCarDataSize();
-            const HEAPF32 = moduleRef.HEAPF32;
-            const carData = new Float32Array(HEAPF32.buffer, ptr, size);
-            
-            const numCars = size / 9; // 9 floats per car
-            let bestCarIdx = -1;
-            
-            // Draw Cars
-            for (let i = 0; i < numCars; ++i) {
-                const idx = i * 9;
-                const x = carData[idx];
-                const y = carData[idx+1];
-                const angle = carData[idx+2];
-                const isDead = carData[idx+3] > 0.5;
-                
-                if (isDead) {
-                    ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
-                    ctx.fillRect(x - 2, y - 2, 4, 4);
-                    continue;
-                }
-                
-                if (bestCarIdx === -1) bestCarIdx = i; // First alive car
-                
-                ctx.save();
-                ctx.translate(x, y);
-                ctx.rotate(angle);
-                
-                // Draw Car Body
-                ctx.fillStyle = i === 0 ? '#ff00ff' : '#8a2be2'; 
-                ctx.fillRect(-15, -25, 30, 50);
-                
-                // Draw "Headlights"
-                ctx.fillStyle = '#ffff00';
-                ctx.fillRect(-12, -25, 6, 4);
-                ctx.fillRect(6, -25, 6, 4);
-                
-                ctx.restore();
-                
-                // Draw Rays for Best Car
-                if (i === 0) { 
-                    ctx.strokeStyle = 'rgba(0, 255, 255, 0.4)';
-                    ctx.lineWidth = 1;
-                    const raySpread = Math.PI / 2;
-                    const angleStep = raySpread / 4;
-                    for (let r = 0; r < 5; ++r) {
-                        const dist = carData[idx + 4 + r];
-                        const rAngle = angle - (raySpread/2) + (r * angleStep);
-                        const ex = x + Math.sin(rAngle) * dist;
-                        const ey = y - Math.cos(rAngle) * dist;
-                        
-                        ctx.beginPath();
-                        ctx.moveTo(x, y);
-                        ctx.lineTo(ex, ey);
-                        ctx.stroke();
-                        
-                        ctx.fillStyle = '#ff00ff';
-                        ctx.fillRect(ex-2, ey-2, 4, 4);
-                    }
-                }
-            }
-
-            ctx.restore(); // Restore camera transform
-
-            // Update Telemetry
-            genLabel.innerText = evoManager.generation;
-            aliveLabel.innerText = evoManager.getAliveCount() + "/" + numCars;
-            fitnessLabel.innerText = Math.round(evoManager.getCurrentMaxFitness());
-            
-            // Draw Brain
-            if (numCars > 0) {
-                const brainVec = evoManager.getBestBrainWeights();
-                const brainArr = [];
-                for(let i=0; i<brainVec.size(); i++) {
-                    brainArr.push(brainVec.get(i));
-                }
-                brainVec.delete();
-                drawNetwork(brainArr);
-            }
-
-            requestAnimationFrame(frame);
-        } catch (e) {
-            console.error(e);
-            ctx.fillStyle = 'red';
-            ctx.font = '20px monospace';
-            ctx.fillText("CRASH: " + e.message, 20, 40);
-        }
-    }
-    requestAnimationFrame(frame);
+    requestAnimationFrame(render);
 }
 
 // Load WebAssembly
@@ -428,12 +156,21 @@ createFluidSimModule({
 }).then((module) => {
     moduleRef = module;
     
-    evoManager = new module.EvolutionManager(100, startPos.x, startPos.y, 0);
-    evoManager.setGoal(goalPos.x, goalPos.y);
+    solver = new module.FluidSolver(N, diff, visc, dt);
+    
+    // Draw an initial aerodynamic teardrop shape
+    solver.setObstacle(80, 100, true);
+    for(let i=-20; i<20; i++) {
+        for(let j=-10; j<10; j++) {
+            if (i*i/400 + j*j/100 <= 1) {
+                solver.setObstacle(80 + i, 100 + j, true);
+            }
+        }
+    }
     
     initControls();
-    updateTrackInCpp();
+    console.log("AeroFlow AI Loaded!");
     
-    console.log("Neon Drive AI Loaded!");
-    startSimulationLoop();
+    lastTime = performance.now();
+    requestAnimationFrame(render);
 });

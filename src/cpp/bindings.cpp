@@ -1,25 +1,18 @@
 #include <emscripten/bind.h>
-#include "evolution_manager.h"
+#include "fluid_solver.h"
 
 using namespace emscripten;
 
-EMSCRIPTEN_BINDINGS(ai_driving_module) {
-    // Register std::vector<float> to pass arrays between JS and C++
-    register_vector<float>("VectorFloat");
-
-    class_<EvolutionManager>("EvolutionManager")
+EMSCRIPTEN_BINDINGS(fluid_module) {
+    class_<FluidSolver>("FluidSolver")
         .constructor<int, float, float, float>()
-        .function("setStart", &EvolutionManager::setStart)
-        .function("setGoal", &EvolutionManager::setGoal)
-        .function("setTrackBoundaries", &EvolutionManager::setTrackBoundaries)
-        .function("update", &EvolutionManager::update)
-        .function("allDead", &EvolutionManager::allDead)
-        .function("nextGeneration", &EvolutionManager::nextGeneration)
-        .function("getCarDataPtr", &EvolutionManager::getCarDataPtr)
-        .function("getCarDataSize", &EvolutionManager::getCarDataSize)
-        .function("getAliveCount", &EvolutionManager::getAliveCount)
-        .function("getCurrentMaxFitness", &EvolutionManager::getCurrentMaxFitness)
-        .function("getBestBrainWeights", &EvolutionManager::getBestBrainWeights)
-        .property("generation", &EvolutionManager::generation)
-        .property("maxFitnessAllTime", &EvolutionManager::maxFitnessAllTime);
+        .function("step", &FluidSolver::step)
+        .function("addDensity", &FluidSolver::addDensity)
+        .function("addVelocity", &FluidSolver::addVelocity)
+        .function("setObstacle", &FluidSolver::setObstacle)
+        .function("clearObstacles", &FluidSolver::clearObstacles)
+        .function("getDensityPtr", &FluidSolver::getDensityPtr)
+        .function("getObstaclesPtr", &FluidSolver::getObstaclesPtr)
+        .function("getSize", &FluidSolver::getSize)
+        .function("getN", &FluidSolver::getN);
 }
