@@ -53,17 +53,17 @@ public:
     void setViscosity(float v) { visc = v; }
     void setDiffusion(float d) { diff = d; }
 
-    float* getDensityRPtr() { return densityR.data(); }
-    float* getDensityGPtr() { return densityG.data(); }
-    float* getDensityBPtr() { return densityB.data(); }
+    uintptr_t getDensityRPtr() { return reinterpret_cast<uintptr_t>(densityR.data()); }
+    uintptr_t getDensityGPtr() { return reinterpret_cast<uintptr_t>(densityG.data()); }
+    uintptr_t getDensityBPtr() { return reinterpret_cast<uintptr_t>(densityB.data()); }
     
-    float* getVxPtr() { return Vx.data(); }
-    float* getVyPtr() { return Vy.data(); }
+    uintptr_t getVxPtr() { return reinterpret_cast<uintptr_t>(Vx.data()); }
+    uintptr_t getVyPtr() { return reinterpret_cast<uintptr_t>(Vy.data()); }
     
-    uint8_t* getObstaclesPtr() { return obstacles.data(); }
-    uint8_t* getObsRPtr() { return obsR.data(); }
-    uint8_t* getObsGPtr() { return obsG.data(); }
-    uint8_t* getObsBPtr() { return obsB.data(); }
+    uintptr_t getObstaclesPtr() { return reinterpret_cast<uintptr_t>(obstacles.data()); }
+    uintptr_t getObsRPtr() { return reinterpret_cast<uintptr_t>(obsR.data()); }
+    uintptr_t getObsGPtr() { return reinterpret_cast<uintptr_t>(obsG.data()); }
+    uintptr_t getObsBPtr() { return reinterpret_cast<uintptr_t>(obsB.data()); }
     
     int getSize() const { return size; }
 };
