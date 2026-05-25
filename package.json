@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite src/web --host",
     "build": "vite build src/web --outDir ../../dist --emptyOutDir",
-    "compile": "mkdir -p src/web/public/wasm && /opt/homebrew/bin/emcc src/cpp/fluid_solver.cpp src/cpp/simulation.cpp src/cpp/bindings.cpp -o src/web/public/wasm/fluid_sim.js -O3 -s WASM=1 -s ALLOW_MEMORY_GROWTH=1 -s MODULARIZE=1 -s EXPORT_NAME='createFluidSimModule' --bind"
+    "compile": "mkdir -p src/web/public/wasm && /opt/homebrew/bin/emcc src/cpp/fluid_solver.cpp src/cpp/simulation.cpp src/cpp/bindings.cpp -o src/web/public/wasm/fluid_sim.js -O3 -s WASM=1 -s ALLOW_MEMORY_GROWTH=1 -s MODULARIZE=1 -s EXPORT_NAME='createFluidSimModule' -s EXPORTED_RUNTIME_METHODS=\"['HEAPU8','HEAPF32','wasmMemory']\" --bind"
   },
   "keywords": [
     "c++",
