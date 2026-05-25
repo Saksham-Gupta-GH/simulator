@@ -28,6 +28,7 @@ let brushSize = 10;
 let shapeRot = 0; // Degrees
 let lastTime = performance.now();
 let lastMousePos = null;
+let dragStartPos = null;
 
 // Sources State
 let sources = [];
@@ -43,6 +44,9 @@ function getCanvasPos(e) {
     };
 }
 
+// ----------------------------------------------------
+// Freehand Drawing (Brush)
+// ----------------------------------------------------
 function drawStroke(x0, y0, x1, y1) {
     const dx = x1 - x0;
     const dy = y1 - y0;
@@ -53,52 +57,80 @@ function drawStroke(x0, y0, x1, y1) {
         const t = steps === 0 ? 0 : i / steps;
         const x = Math.round(x0 + dx * t);
         const y = Math.round(y0 + dy * t);
-        stampShape(x, y);
+        stampBrush(x, y);
     }
 }
 
-function stampShape(cx, cy) {
+function stampBrush(cx, cy) {
     if (!solver) return;
     const isSolid = activeTool !== 'erase';
+    const half = brushSize;
+    for (let i = -half; i <= half; i++) {
+        for (let j = -half; j <= half; j++) {
+            if (i*i + j*j <= half*half) {
+                solver.setObstacle(cx + i, cy + j, isSolid);
+            }
+        }
+    }
+}
+
+// ----------------------------------------------------
+// MS-Paint Bounding Box Shapes
+// ----------------------------------------------------
+function stampShapeBounds(x0, y0, x1, y1) {
+    if (!solver) return;
     
+    const minX = Math.min(x0, x1);
+    const maxX = Math.max(x0, x1);
+    const minY = Math.min(y0, y1);
+    const maxY = Math.max(y0, y1);
+    
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const width = maxX - minX;
+    const height = maxY - minY;
+    
+    const halfW = width / 2;
+    const halfH = height / 2;
     const rad = (shapeRot * Math.PI) / 180;
     const cosA = Math.cos(-rad);
     const sinA = Math.sin(-rad);
-    const half = brushSize;
 
-    if (activeTool === 'draw' || activeTool === 'erase' || activeTool === 'circle') {
-        for (let i = -half; i <= half; i++) {
-            for (let j = -half; j <= half; j++) {
-                if (i*i + j*j <= half*half) {
-                    solver.setObstacle(cx + i, cy + j, isSolid);
+    // Calculate a generous bounding box to loop through
+    const boxR = Math.ceil(Math.max(halfW, halfH) * 1.5);
+
+    if (activeTool === 'circle') {
+        const r2 = Math.min(halfW, halfH) * Math.min(halfW, halfH);
+        for (let i = -boxR; i <= boxR; i++) {
+            for (let j = -boxR; j <= boxR; j++) {
+                if (i*i + j*j <= r2) {
+                    solver.setObstacle(Math.round(cx + i), Math.round(cy + j), true);
                 }
             }
         }
     } 
     else if (activeTool === 'rect') {
-        const box = Math.ceil(half * 1.5);
-        for (let i = -box; i <= box; i++) {
-            for (let j = -box; j <= box; j++) {
+        for (let i = -boxR; i <= boxR; i++) {
+            for (let j = -boxR; j <= boxR; j++) {
                 const rx = i * cosA - j * sinA;
                 const ry = i * sinA + j * cosA;
-                if (rx >= -half && rx <= half && ry >= -half && ry <= half) {
-                    solver.setObstacle(cx + i, cy + j, isSolid);
+                if (rx >= -halfW && rx <= halfW && ry >= -halfH && ry <= halfH) {
+                    solver.setObstacle(Math.round(cx + i), Math.round(cy + j), true);
                 }
             }
         }
     }
     else if (activeTool === 'tri') {
-        const box = Math.ceil(half * 1.5);
-        const p1 = {x: half, y: 0};
-        const p2 = {x: -half, y: half};
-        const p3 = {x: -half, y: -half};
+        const p1 = {x: 0, y: -halfH};
+        const p2 = {x: halfW, y: halfH};
+        const p3 = {x: -halfW, y: halfH};
         
-        function sign(p1, p2, p3) {
-            return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+        function sign(pt1, pt2, pt3) {
+            return (pt1.x - pt3.x) * (pt2.y - pt3.y) - (pt2.x - pt3.x) * (pt1.y - pt3.y);
         }
 
-        for (let i = -box; i <= box; i++) {
-            for (let j = -box; j <= box; j++) {
+        for (let i = -boxR; i <= boxR; i++) {
+            for (let j = -boxR; j <= boxR; j++) {
                 const rx = i * cosA - j * sinA;
                 const ry = i * sinA + j * cosA;
                 const pt = {x: rx, y: ry};
@@ -110,7 +142,7 @@ function stampShape(cx, cy) {
                 const has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
                 
                 if (!(has_neg && has_pos)) {
-                    solver.setObstacle(cx + i, cy + j, isSolid);
+                    solver.setObstacle(Math.round(cx + i), Math.round(cy + j), true);
                 }
             }
         }
@@ -136,7 +168,7 @@ function placeSource(cx, cy) {
             type: 'line',
             x: cx,
             y: cy,
-            length: brushSize * 4,
+            length: 100, // Default length
             angle: shapeRot, // Line physical orientation
             dir: shapeRot - 90, // Flow direction
             speed: 50
@@ -270,26 +302,66 @@ function applySources() {
     }
 }
 
-// Render overlay UI directly on the canvas
+// ----------------------------------------------------
+// Canvas Render Overlay
+// ----------------------------------------------------
 function drawOverlay() {
     ctx.lineWidth = 2;
     ctx.font = "bold 14px Roboto";
     ctx.textBaseline = "middle";
     ctx.textAlign = "center";
 
+    // 1. Draw MS-Paint Wireframe if dragging a shape
+    if (isDrawing && dragStartPos && lastMousePos && (activeTool === 'rect' || activeTool === 'tri' || activeTool === 'circle')) {
+        const x0 = dragStartPos.x;
+        const y0 = dragStartPos.y;
+        const x1 = lastMousePos.x;
+        const y1 = lastMousePos.y;
+        
+        const cx = (x0 + x1) / 2;
+        const cy = (y0 + y1) / 2;
+        const width = Math.abs(x1 - x0);
+        const height = Math.abs(y1 - y0);
+        
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate((shapeRot * Math.PI) / 180);
+        
+        ctx.strokeStyle = '#d93025'; // Red wireframe
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 2;
+        
+        if (activeTool === 'rect') {
+            ctx.strokeRect(-width/2, -height/2, width, height);
+        } else if (activeTool === 'circle') {
+            ctx.beginPath();
+            const r = Math.min(width/2, height/2);
+            ctx.arc(0, 0, r, 0, Math.PI*2);
+            ctx.stroke();
+        } else if (activeTool === 'tri') {
+            ctx.beginPath();
+            ctx.moveTo(0, -height/2);
+            ctx.lineTo(width/2, height/2);
+            ctx.lineTo(-width/2, height/2);
+            ctx.closePath();
+            ctx.stroke();
+        }
+        
+        ctx.restore();
+    }
+
+    // 2. Draw Emitters
+    ctx.setLineDash([]);
     for (const src of sources) {
         if (src.type === 'point') {
-            // Draw Circle
             ctx.beginPath();
             ctx.arc(src.x, src.y, 4, 0, Math.PI*2);
             ctx.fillStyle = '#1a73e8';
             ctx.fill();
             
-            // Draw ID Text
             ctx.fillStyle = "#1a73e8";
             ctx.fillText(src.id, src.x - 12, src.y - 12);
             
-            // Draw Direction Arrow
             const radDir = (src.dir * Math.PI) / 180;
             const ex = src.x + Math.cos(radDir) * 15;
             const ey = src.y + Math.sin(radDir) * 15;
@@ -311,7 +383,6 @@ function drawOverlay() {
             const ex = src.x + half * cosA;
             const ey = src.y + half * sinA;
 
-            // Draw Line
             ctx.beginPath();
             ctx.moveTo(sx, sy);
             ctx.lineTo(ex, ey);
@@ -319,11 +390,9 @@ function drawOverlay() {
             ctx.lineWidth = 3;
             ctx.stroke();
 
-            // Draw ID Text
             ctx.fillStyle = "#1a73e8";
             ctx.fillText(src.id, src.x, src.y - 15);
 
-            // Draw multiple direction arrows originating from the line
             ctx.lineWidth = 1;
             ctx.strokeStyle = 'rgba(255,255,255,0.7)';
             const radDir = (src.dir * Math.PI) / 180;
@@ -359,9 +428,7 @@ function initControls() {
 
     resSelect.addEventListener('change', (e) => {
         const newN = parseInt(e.target.value);
-        if (solver) {
-            solver.delete(); // Free C++ memory
-        }
+        if (solver) solver.delete(); 
         N = newN;
         document.getElementById('res-val').innerText = `${N}x${N}`;
         
@@ -424,33 +491,41 @@ function initControls() {
         if(solver) solver.setViscosity(val);
     });
 
-    // Mouse Events
+    // Interaction Events
     canvas.addEventListener('mousedown', (e) => {
         const pos = getCanvasPos(e);
         lastMousePos = pos;
         
         if (activeTool.startsWith('src-')) {
             placeSource(pos.x, pos.y);
-        } else {
+        } else if (activeTool === 'rect' || activeTool === 'tri' || activeTool === 'circle') {
             isDrawing = true;
-            stampShape(pos.x, pos.y);
+            dragStartPos = pos; // MS Paint style drag start
+        } else {
+            // Freehand / Erase
+            isDrawing = true;
+            stampBrush(pos.x, pos.y);
         }
     });
 
     canvas.addEventListener('mousemove', (e) => {
         if (!isDrawing) return;
         const pos = getCanvasPos(e);
+        
         if (activeTool === 'draw' || activeTool === 'erase') {
             drawStroke(lastMousePos.x, lastMousePos.y, pos.x, pos.y);
-        } else {
-            stampShape(pos.x, pos.y);
-        }
+        } 
         lastMousePos = pos;
     });
 
     window.addEventListener('mouseup', () => {
+        if (isDrawing && dragStartPos && lastMousePos && (activeTool === 'rect' || activeTool === 'tri' || activeTool === 'circle')) {
+            // Mouse released, stamp the dragged MS-Paint shape!
+            stampShapeBounds(dragStartPos.x, dragStartPos.y, lastMousePos.x, lastMousePos.y);
+        }
         isDrawing = false;
         lastMousePos = null;
+        dragStartPos = null;
     });
     
     canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -476,21 +551,18 @@ function render() {
 
     const data = imgData.data;
 
-    // Draw Fluid and Solid geometry to ImageData
     for (let i = 0; i < size; i++) {
         const d = densityArray[i];
         const isWall = obsArray[i];
         const pxIdx = i * 4;
 
         if (isWall) {
-            // Material Gray Wall color
             data[pxIdx] = 95;
             data[pxIdx + 1] = 99;
             data[pxIdx + 2] = 104;
             data[pxIdx + 3] = 255;
         } else {
             const dClamped = Math.min(1.0, d / 20.0);
-            
             const r_bg = 248, g_bg = 249, b_bg = 250;
             const r_fluid = 26, g_fluid = 115, b_fluid = 232;
             
@@ -527,10 +599,9 @@ createFluidSimModule({
     sources[0].length = 150;
     renderEmittersUI();
     
-    brushSize = 15;
     shapeRot = -20;
     activeTool = 'rect';
-    stampShape(70, 100);
+    stampShapeBounds(40, 60, 100, 140);
     
     brushSize = 10;
     shapeRot = 0;
