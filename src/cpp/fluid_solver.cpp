@@ -8,10 +8,13 @@ FluidSolver::FluidSolver(int N, float diffusion, float viscosity, float dt)
     size = N * N;
     iter = 16;
     
-    s.resize(size, 0.0f);
     densityR.resize(size, 0.0f);
     densityG.resize(size, 0.0f);
     densityB.resize(size, 0.0f);
+
+    densityR0.resize(size, 0.0f);
+    densityG0.resize(size, 0.0f);
+    densityB0.resize(size, 0.0f);
     
     Vx.resize(size, 0.0f);
     Vy.resize(size, 0.0f);
@@ -194,22 +197,22 @@ void FluidSolver::step() {
     project(Vx, Vy, Vx0, Vy0);
     
     // Advect Red
-    std::swap(s, densityR);
-    diffuse(0, densityR, s, diff, dt);
-    std::swap(s, densityR);
-    advect(0, densityR, s, Vx, Vy, dt);
+    std::swap(densityR0, densityR);
+    diffuse(0, densityR, densityR0, diff, dt);
+    std::swap(densityR0, densityR);
+    advect(0, densityR, densityR0, Vx, Vy, dt);
 
     // Advect Green
-    std::swap(s, densityG);
-    diffuse(0, densityG, s, diff, dt);
-    std::swap(s, densityG);
-    advect(0, densityG, s, Vx, Vy, dt);
+    std::swap(densityG0, densityG);
+    diffuse(0, densityG, densityG0, diff, dt);
+    std::swap(densityG0, densityG);
+    advect(0, densityG, densityG0, Vx, Vy, dt);
 
     // Advect Blue
-    std::swap(s, densityB);
-    diffuse(0, densityB, s, diff, dt);
-    std::swap(s, densityB);
-    advect(0, densityB, s, Vx, Vy, dt);
+    std::swap(densityB0, densityB);
+    diffuse(0, densityB, densityB0, diff, dt);
+    std::swap(densityB0, densityB);
+    advect(0, densityB, densityB0, Vx, Vy, dt);
 
     // Slight decay to prevent screen filling
     for(int i = 0; i < size; i++) {

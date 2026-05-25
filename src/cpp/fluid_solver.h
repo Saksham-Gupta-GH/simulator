@@ -14,10 +14,13 @@ private:
     float diff;
     float visc;
 
-    std::vector<float> s;
     std::vector<float> densityR;
     std::vector<float> densityG;
     std::vector<float> densityB;
+
+    std::vector<float> densityR0;
+    std::vector<float> densityG0;
+    std::vector<float> densityB0;
 
     std::vector<float> Vx;
     std::vector<float> Vy;

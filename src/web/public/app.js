@@ -16,12 +16,19 @@ const DISPLAY_SIZE = 1000;
 canvas.width = DISPLAY_SIZE;
 canvas.height = DISPLAY_SIZE;
 
-// Low-Res Physics Buffer (Only for fluid now)
+// Low-Res Physics Buffer (Fluid)
 const offscreenCanvas = document.createElement('canvas');
 offscreenCanvas.width = N;
 offscreenCanvas.height = N;
 const offCtx = offscreenCanvas.getContext('2d');
 let imgData = offCtx.createImageData(N, N);
+
+// Low-Res Physics Buffer (Obstacles)
+const obsCanvas = document.createElement('canvas');
+obsCanvas.width = N;
+obsCanvas.height = N;
+const obsCtx = obsCanvas.getContext('2d');
+let obsImgData = obsCtx.createImageData(N, N);
 
 const fpsCounter = document.getElementById('fps-counter');
 const srcCountEl = document.getElementById('src-count');
@@ -353,24 +360,6 @@ function applySources() {
 // ----------------------------------------------------
 function drawOverlay() {
     const scale = DISPLAY_SIZE / N;
-    
-    // 1. Render Solid Obstacles perfectly sharply
-    const HEAPU8 = moduleRef.HEAPU8;
-    const size = solver.getSize();
-    const obsArray = new Uint8Array(HEAPU8.buffer, solver.getObstaclesPtr(), size);
-    const obsR = new Uint8Array(HEAPU8.buffer, solver.getObsRPtr(), size);
-    const obsG = new Uint8Array(HEAPU8.buffer, solver.getObsGPtr(), size);
-    const obsB = new Uint8Array(HEAPU8.buffer, solver.getObsBPtr(), size);
-    
-    for (let j = 0; j < N; j++) {
-        for (let i = 0; i < N; i++) {
-            const idx = i + j * N;
-            if (obsArray[idx]) {
-                ctx.fillStyle = `rgb(${obsR[idx]}, ${obsG[idx]}, ${obsB[idx]})`;
-                ctx.fillRect(i * scale, j * scale, scale + 0.5, scale + 0.5); // +0.5 to prevent subpixel tearing
-            }
-        }
-    }
 
     ctx.lineWidth = 3;
     ctx.font = "bold 24px Roboto";
@@ -511,6 +500,10 @@ function initControls() {
         offscreenCanvas.height = N;
         imgData = offCtx.createImageData(N, N);
         
+        obsCanvas.width = N;
+        obsCanvas.height = N;
+        obsImgData = obsCtx.createImageData(N, N);
+        
         solver = new moduleRef.FluidSolver(N, diff, visc, dt);
         sources = [];
         renderEmittersUI();
@@ -631,8 +624,10 @@ function render() {
     const obsArray = new Uint8Array(HEAPU8.buffer, obsPtr, size);
 
     const data = imgData.data;
+    const obsData = obsImgData.data;
 
     // Render ONLY fluid into low-res offscreen buffer
+    // Render Obstacles into separate low-res buffer
     const r_bg = 248, g_bg = 249, b_bg = 250;
     
     for (let i = 0; i < size; i++) {
@@ -640,12 +635,20 @@ function render() {
         const pxIdx = i * 4;
 
         if (isWall) {
-            // Draw transparent where walls are (so the canvas background shows, which will be covered by sharp rects)
+            // Draw transparent where walls are
             data[pxIdx] = r_bg;
             data[pxIdx + 1] = g_bg;
             data[pxIdx + 2] = b_bg;
             data[pxIdx + 3] = 255;
+            
+            // Draw wall on obsData
+            obsData[pxIdx] = obsR[i];
+            obsData[pxIdx + 1] = obsG[i];
+            obsData[pxIdx + 2] = obsB[i];
+            obsData[pxIdx + 3] = 255;
         } else {
+            obsData[pxIdx + 3] = 0; // transparent
+            
             const dr = densityR[i];
             const dg = densityG[i];
             const db = densityB[i];
@@ -678,12 +681,17 @@ function render() {
     }
 
     offCtx.putImageData(imgData, 0, 0);
+    obsCtx.putImageData(obsImgData, 0, 0);
 
     // Draw the low-res physics buffer onto the high-res display canvas smoothly
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(offscreenCanvas, 0, 0, DISPLAY_SIZE, DISPLAY_SIZE);
     
-    // Draw crisp HD UI overlay and SHARP obstacles on top
+    // Draw the obstacles sharply!
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(obsCanvas, 0, 0, DISPLAY_SIZE, DISPLAY_SIZE);
+    
+    // Draw crisp HD UI overlay
     drawOverlay();
 
     const now = performance.now();
