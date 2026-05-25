@@ -3,105 +3,90 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AeroFlow AI | Engineering Sandbox</title>
+    <title>AeroFlow Engine</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="glass-header">
-        <h1>AeroFlow <span>Fluid Dynamics</span></h1>
-        <div class="badge"><i class="fa-solid fa-microchip"></i> C++ WASM Core Active</div>
+    <div class="md-app-bar">
+        <h1><i class="fa-solid fa-wind" style="color:#1a73e8;"></i> AeroFlow <span>Engine</span></h1>
+        <div class="badge">CFD WASM Solver</div>
     </div>
 
     <div class="app-container">
         <!-- Sidebar -->
-        <div class="glass-panel sidebar">
-            <div class="control-section">
-                <h3>Wind Tunnel Tools</h3>
-                <p class="subtitle">Draw obstacles to test aerodynamics.</p>
-                
-                <div class="btn-group" style="margin-bottom: 10px;">
-                    <button id="btn-draw" class="glass-btn active"><i class="fa-solid fa-pen"></i> Freehand Draw</button>
-                    <button id="btn-erase" class="glass-btn"><i class="fa-solid fa-eraser"></i> Eraser</button>
-                </div>
-                
-                <p class="subtitle" style="margin-top: 15px;">Insert Perfect Shape</p>
-                <div class="btn-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
-                    <button id="btn-shape-circle" class="glass-btn shape-btn"><i class="fa-regular fa-circle"></i> Circle</button>
-                    <button id="btn-shape-rect" class="glass-btn shape-btn"><i class="fa-regular fa-square"></i> Rect</button>
-                    <button id="btn-shape-tri" class="glass-btn shape-btn" style="grid-column: span 2;"><i class="fa-solid fa-caret-up"></i> Triangle</button>
-                </div>
-                
-                <div class="slider-group">
-                    <label>Brush/Shape Size: <span id="brush-size-val">10</span>px</label>
-                    <input type="range" id="brush-size" min="2" max="60" value="10">
-                </div>
-                <div class="slider-group">
-                    <label>Shape Rotation: <span id="shape-rot-val">0</span>°</label>
-                    <input type="range" id="shape-rot" min="0" max="360" value="0">
-                </div>
-                
-                <button id="btn-clear" class="glass-btn danger" style="margin-top: 15px;"><i class="fa-solid fa-trash"></i> Clear Tunnel</button>
-            </div>
-
-            <div class="control-section">
-                <h3>Fluid Emitters</h3>
-                <div class="btn-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px;">
-                    <button id="btn-src-point" class="glass-btn shape-btn"><i class="fa-solid fa-location-dot"></i> Point</button>
-                    <button id="btn-src-line" class="glass-btn shape-btn"><i class="fa-solid fa-grip-lines-vertical"></i> Line</button>
-                </div>
-                
-                <div class="slider-group">
-                    <label>Flow Direction: <span id="src-dir-val">0</span>°</label>
-                    <input type="range" id="src-dir" min="0" max="360" value="0">
-                </div>
-                <div class="slider-group">
-                    <label>Emitter Speed: <span id="src-speed-val">50</span></label>
-                    <input type="range" id="src-speed" min="0" max="200" value="50">
-                </div>
-                <button id="btn-clear-src" class="glass-btn danger" style="margin-top: 10px;"><i class="fa-solid fa-ban"></i> Clear Emitters</button>
-            </div>
-
+        <div class="sidebar">
             <div class="control-section">
                 <h3>Global Properties</h3>
                 <div class="slider-group">
-                    <label>Smoke Density: <span id="prop-dens-val">100</span></label>
+                    <label>Smoke Density <span><span id="prop-dens-val">100</span></span></label>
                     <input type="range" id="prop-dens" min="0" max="255" value="100">
                 </div>
                 <div class="slider-group">
-                    <label>Viscosity: <span id="prop-visc-val">0.000</span></label>
+                    <label>Viscosity <span><span id="prop-visc-val">0.000</span></span></label>
                     <input type="range" id="prop-visc" min="0" max="0.01" step="0.0001" value="0">
                 </div>
             </div>
 
             <div class="control-section">
-                <h3>Simulation Telemetry</h3>
+                <h3>Wind Tunnel Tools</h3>
+                
+                <div class="btn-group">
+                    <button id="btn-draw" class="md-btn active"><i class="fa-solid fa-pen"></i> Freehand</button>
+                    <button id="btn-erase" class="md-btn"><i class="fa-solid fa-eraser"></i> Erase</button>
+                    <button id="btn-shape-rect" class="md-btn"><i class="fa-regular fa-square"></i> Rectangle</button>
+                    <button id="btn-shape-tri" class="md-btn"><i class="fa-solid fa-caret-up"></i> Triangle</button>
+                    <button id="btn-shape-circle" class="md-btn"><i class="fa-regular fa-circle"></i> Circle</button>
+                </div>
+                
+                <div class="slider-group">
+                    <label>Brush/Shape Size <span><span id="brush-size-val">10</span>px</span></label>
+                    <input type="range" id="brush-size" min="2" max="60" value="10">
+                </div>
+                <div class="slider-group">
+                    <label>Shape Rotation <span><span id="shape-rot-val">0</span>°</span></label>
+                    <input type="range" id="shape-rot" min="0" max="360" value="0">
+                </div>
+                
+                <button id="btn-clear" class="md-btn danger" style="width: 100%; justify-content: center; margin-top: 8px;"><i class="fa-solid fa-trash"></i> Clear Obstacles</button>
+            </div>
+
+            <div class="control-section">
+                <h3>Fluid Emitters</h3>
+                <div class="btn-group">
+                    <button id="btn-src-point" class="md-btn"><i class="fa-solid fa-location-dot"></i> Point Source</button>
+                    <button id="btn-src-line" class="md-btn"><i class="fa-solid fa-grip-lines-vertical"></i> Line Source</button>
+                </div>
+                <p style="font-size: 0.8rem; color:#5f6368; margin-bottom: 16px;">Select a tool above and click on the canvas to place a new emitter.</p>
+                
+                <!-- Dynamic Emitter Cards will go here -->
+                <div id="emitters-list"></div>
+                
+            </div>
+
+            <div class="control-section" style="border-bottom: none;">
+                <h3>Telemetry</h3>
                 <div class="telemetry-box">
                     <div class="telemetry-row">
-                        <span>Grid Resolution:</span>
-                        <span class="value">200x200 (40,000 cells)</span>
+                        <span>Grid Res</span>
+                        <span class="value">200x200</span>
                     </div>
                     <div class="telemetry-row">
-                        <span>Physics FPS:</span>
+                        <span>FPS</span>
                         <span class="value" id="fps-counter">60</span>
                     </div>
                     <div class="telemetry-row">
-                        <span>Solver Iterations:</span>
-                        <span class="value">16</span>
+                        <span>Active Sources</span>
+                        <span class="value" id="src-count">0</span>
                     </div>
                 </div>
-            </div>
-            
-            <div class="footer-info">
-                Solving the Navier-Stokes equations via Jos Stam's Stable Fluids algorithm.
             </div>
         </div>
 
         <!-- Main Canvas -->
-        <div class="glass-panel canvas-container">
+        <div class="canvas-container">
             <canvas id="fluid-canvas" width="600" height="600"></canvas>
-            <div class="canvas-overlay-text">High-Velocity Inlet <i class="fa-solid fa-wind"></i></div>
         </div>
     </div>
 

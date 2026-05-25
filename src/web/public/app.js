@@ -17,19 +17,20 @@ canvas.height = N;
 
 const imgData = ctx.createImageData(N, N);
 const fpsCounter = document.getElementById('fps-counter');
+const srcCountEl = document.getElementById('src-count');
+const emittersListEl = document.getElementById('emitters-list');
 
 // State
 let isDrawing = false;
-let activeTool = 'draw'; // 'draw', 'erase', 'circle', 'rect', 'tri', 'src-point', 'src-line'
+let activeTool = 'draw'; 
 let brushSize = 10;
 let shapeRot = 0; // Degrees
 let lastTime = performance.now();
 let lastMousePos = null;
 
-// Emitter Settings
-let srcDir = 0; // Degrees
-let srcSpeed = 50;
+// Sources State
 let sources = [];
+let sourceIdCounter = 0;
 
 function getCanvasPos(e) {
     const rect = canvas.getBoundingClientRect();
@@ -41,7 +42,6 @@ function getCanvasPos(e) {
     };
 }
 
-// Seamless Brush Interpolation (Lerp)
 function drawStroke(x0, y0, x1, y1) {
     const dx = x1 - x0;
     const dy = y1 - y0;
@@ -63,7 +63,6 @@ function stampShape(cx, cy) {
     const rad = (shapeRot * Math.PI) / 180;
     const cosA = Math.cos(-rad);
     const sinA = Math.sin(-rad);
-
     const half = brushSize;
 
     if (activeTool === 'draw' || activeTool === 'erase' || activeTool === 'circle') {
@@ -101,7 +100,6 @@ function stampShape(cx, cy) {
             for (let j = -box; j <= box; j++) {
                 const rx = i * cosA - j * sinA;
                 const ry = i * sinA + j * cosA;
-                
                 const pt = {x: rx, y: ry};
                 const d1 = sign(pt, p1, p2);
                 const d2 = sign(pt, p2, p3);
@@ -118,26 +116,112 @@ function stampShape(cx, cy) {
     }
 }
 
+// ----------------------------------------------------
+// UI Logic for Emitter Cards
+// ----------------------------------------------------
 function placeSource(cx, cy) {
     if (activeTool === 'src-point') {
         sources.push({
+            id: sourceIdCounter++,
             type: 'point',
             x: cx,
             y: cy,
-            dir: srcDir,
-            speed: srcSpeed
+            dir: shapeRot, // initial direction based on UI rot
+            speed: 50
         });
     } else if (activeTool === 'src-line') {
         sources.push({
+            id: sourceIdCounter++,
             type: 'line',
             x: cx,
             y: cy,
-            length: brushSize * 2,
-            angle: shapeRot, // Orientation of the line
-            dir: srcDir,     // Direction the fluid is blowing
-            speed: srcSpeed
+            length: brushSize * 4,
+            angle: shapeRot, // orientation of the line itself
+            dir: shapeRot - 90, // default flow direction perpendicular to line
+            speed: 50
         });
     }
+    renderEmittersUI();
+}
+
+function renderEmittersUI() {
+    srcCountEl.innerText = sources.length;
+    emittersListEl.innerHTML = '';
+
+    sources.forEach((src) => {
+        const card = document.createElement('div');
+        card.className = 'emitter-card';
+
+        const header = document.createElement('div');
+        header.className = 'emitter-header';
+        
+        const title = document.createElement('div');
+        title.className = 'emitter-title';
+        title.innerHTML = src.type === 'point' 
+            ? '<i class="fa-solid fa-location-dot" style="color:#1a73e8;"></i> Point Source'
+            : '<i class="fa-solid fa-grip-lines-vertical" style="color:#1a73e8;"></i> Line Source';
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'emitter-delete';
+        delBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+        delBtn.onclick = () => {
+            sources = sources.filter(s => s.id !== src.id);
+            renderEmittersUI();
+        };
+
+        header.appendChild(title);
+        header.appendChild(delBtn);
+        card.appendChild(header);
+
+        // Speed Slider
+        const speedGroup = document.createElement('div');
+        speedGroup.className = 'slider-group';
+        speedGroup.style.marginBottom = '8px';
+        speedGroup.innerHTML = `
+            <label>Speed <span><span id="speed-val-${src.id}">${src.speed}</span></span></label>
+            <input type="range" min="0" max="200" value="${src.speed}">
+        `;
+        const speedSlider = speedGroup.querySelector('input');
+        speedSlider.addEventListener('input', (e) => {
+            src.speed = parseInt(e.target.value);
+            speedGroup.querySelector(`#speed-val-${src.id}`).innerText = src.speed;
+        });
+        card.appendChild(speedGroup);
+
+        // Direction Slider
+        const dirGroup = document.createElement('div');
+        dirGroup.className = 'slider-group';
+        dirGroup.style.marginBottom = '8px';
+        dirGroup.innerHTML = `
+            <label>Flow Direction <span><span id="dir-val-${src.id}">${src.dir}</span>°</span></label>
+            <input type="range" min="-180" max="180" value="${src.dir}">
+        `;
+        const dirSlider = dirGroup.querySelector('input');
+        dirSlider.addEventListener('input', (e) => {
+            src.dir = parseInt(e.target.value);
+            dirGroup.querySelector(`#dir-val-${src.id}`).innerText = src.dir;
+        });
+        card.appendChild(dirGroup);
+
+        // Length Slider (Line Only)
+        if (src.type === 'line') {
+            const lenGroup = document.createElement('div');
+            lenGroup.className = 'slider-group';
+            lenGroup.style.marginBottom = '0';
+            lenGroup.innerHTML = `
+                <label>Line Length <span><span id="len-val-${src.id}">${src.length}</span>px</span></label>
+                <input type="range" min="10" max="300" value="${src.length}">
+            `;
+            const lenSlider = lenGroup.querySelector('input');
+            lenSlider.addEventListener('input', (e) => {
+                src.length = parseInt(e.target.value);
+                lenGroup.querySelector(`#len-val-${src.id}`).innerText = src.length;
+            });
+            card.appendChild(lenGroup);
+        }
+
+        emittersListEl.appendChild(card);
+    });
 }
 
 function applySources() {
@@ -156,13 +240,74 @@ function applySources() {
             const cosA = Math.cos(radAngle);
             const sinA = Math.sin(radAngle);
             
-            // Iterate along the line
             const half = src.length / 2;
             for (let t = -half; t <= half; t++) {
                 const px = Math.round(src.x + t * cosA);
                 const py = Math.round(src.y + t * sinA);
-                solver.addDensity(px, py, globalDensity);
-                solver.addVelocity(px, py, vx, vy);
+                if(px >= 0 && px < N && py >= 0 && py < N) {
+                    solver.addDensity(px, py, globalDensity);
+                    solver.addVelocity(px, py, vx, vy);
+                }
+            }
+        }
+    }
+}
+
+// Render overlay UI directly on the canvas
+function drawOverlay() {
+    ctx.lineWidth = 2;
+    for (const src of sources) {
+        if (src.type === 'point') {
+            // Draw Circle
+            ctx.beginPath();
+            ctx.arc(src.x, src.y, 4, 0, Math.PI*2);
+            ctx.fillStyle = '#1a73e8';
+            ctx.fill();
+            
+            // Draw Direction Arrow
+            const radDir = (src.dir * Math.PI) / 180;
+            const ex = src.x + Math.cos(radDir) * 15;
+            const ey = src.y + Math.sin(radDir) * 15;
+            
+            ctx.beginPath();
+            ctx.moveTo(src.x, src.y);
+            ctx.lineTo(ex, ey);
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+
+        } else if (src.type === 'line') {
+            const radAngle = (src.angle * Math.PI) / 180;
+            const cosA = Math.cos(radAngle);
+            const sinA = Math.sin(radAngle);
+            const half = src.length / 2;
+            
+            const sx = src.x - half * cosA;
+            const sy = src.y - half * sinA;
+            const ex = src.x + half * cosA;
+            const ey = src.y + half * sinA;
+
+            // Draw Line
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(ex, ey);
+            ctx.strokeStyle = '#1a73e8';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Draw multiple direction arrows originating from the line
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+            const radDir = (src.dir * Math.PI) / 180;
+            const dirX = Math.cos(radDir) * 15;
+            const dirY = Math.sin(radDir) * 15;
+
+            for (let t = -half; t <= half; t += 20) {
+                const px = src.x + t * cosA;
+                const py = src.y + t * sinA;
+                ctx.beginPath();
+                ctx.moveTo(px, py);
+                ctx.lineTo(px + dirX, py + dirY);
+                ctx.stroke();
             }
         }
     }
@@ -179,7 +324,6 @@ function initControls() {
     
     const srcPoint = document.getElementById('btn-src-point');
     const srcLine = document.getElementById('btn-src-line');
-    const clearSrc = document.getElementById('btn-clear-src');
     
     const toolBtns = [drawBtn, eraseBtn, shapeCircle, shapeRect, shapeTri, srcPoint, srcLine];
     const setTool = (name, btn) => {
@@ -200,10 +344,6 @@ function initControls() {
         if (solver) solver.clearObstacles();
     });
     
-    clearSrc.addEventListener('click', () => {
-        sources = [];
-    });
-
     // Sliders
     document.getElementById('brush-size').addEventListener('input', (e) => {
         brushSize = parseInt(e.target.value);
@@ -212,14 +352,6 @@ function initControls() {
     document.getElementById('shape-rot').addEventListener('input', (e) => {
         shapeRot = parseInt(e.target.value);
         document.getElementById('shape-rot-val').innerText = shapeRot;
-    });
-    document.getElementById('src-dir').addEventListener('input', (e) => {
-        srcDir = parseInt(e.target.value);
-        document.getElementById('src-dir-val').innerText = srcDir;
-    });
-    document.getElementById('src-speed').addEventListener('input', (e) => {
-        srcSpeed = parseInt(e.target.value);
-        document.getElementById('src-speed-val').innerText = srcSpeed;
     });
 
     document.getElementById('prop-dens').addEventListener('input', (e) => {
@@ -251,8 +383,6 @@ function initControls() {
         if (activeTool === 'draw' || activeTool === 'erase') {
             drawStroke(lastMousePos.x, lastMousePos.y, pos.x, pos.y);
         } else {
-            // Only stamp once per click for perfect shapes, or lerp?
-            // Usually, you don't drag perfect shapes, but if they do, just stamp.
             stampShape(pos.x, pos.y);
         }
         lastMousePos = pos;
@@ -284,28 +414,39 @@ function render() {
 
     const data = imgData.data;
 
+    // Draw Fluid and Solid geometry to ImageData
     for (let i = 0; i < size; i++) {
         const d = densityArray[i];
         const isWall = obsArray[i];
-        
         const pxIdx = i * 4;
 
         if (isWall) {
-            data[pxIdx] = 255;
-            data[pxIdx + 1] = 0;
-            data[pxIdx + 2] = 255;
+            // Material Gray Wall color
+            data[pxIdx] = 95;
+            data[pxIdx + 1] = 99;
+            data[pxIdx + 2] = 104;
             data[pxIdx + 3] = 255;
         } else {
-            const brightness = Math.min(255, d * 2.5); 
+            // Light background (white/gray) with Cyan fluid
+            // d maps to how cyan it gets. Background is #f8f9fa
+            const dClamped = Math.min(1.0, d / 20.0);
             
-            data[pxIdx] = brightness * 0.1;       
-            data[pxIdx + 1] = brightness * 0.8 + 5;  
-            data[pxIdx + 2] = brightness * 1.0 + 15; 
+            // Background color
+            const r_bg = 248, g_bg = 249, b_bg = 250;
+            // Fluid Color (Material Blue / Cyan)
+            const r_fluid = 26, g_fluid = 115, b_fluid = 232;
+            
+            data[pxIdx] = r_bg + dClamped * (r_fluid - r_bg);       
+            data[pxIdx + 1] = g_bg + dClamped * (g_fluid - g_bg);  
+            data[pxIdx + 2] = b_bg + dClamped * (b_fluid - b_bg); 
             data[pxIdx + 3] = 255;                
         }
     }
 
     ctx.putImageData(imgData, 0, 0);
+    
+    // Draw UI Overlays (Emitters)
+    drawOverlay();
 
     const now = performance.now();
     const frameTime = now - lastTime;
@@ -322,27 +463,26 @@ createFluidSimModule({
     
     solver = new module.FluidSolver(N, diff, visc, dt);
     
-    // Set an initial Wind Tunnel Source manually to replace the old C++ one
-    brushSize = 60; // Make it a large line
-    shapeRot = 90; // Vertical line
-    srcDir = 0; // Blowing right
-    srcSpeed = 50;
+    // Default setup
     activeTool = 'src-line';
-    placeSource(2, N/2);
+    shapeRot = 90;
+    placeSource(4, N/2);
+    // Tweak properties
+    sources[0].dir = 0;
+    sources[0].length = 150;
+    renderEmittersUI();
     
-    // Add default aerodynamic obstacle
     brushSize = 15;
     shapeRot = -20;
     activeTool = 'rect';
     stampShape(70, 100);
     
-    // Reset back to defaults for user
     brushSize = 10;
     shapeRot = 0;
     activeTool = 'draw';
     
     initControls();
-    console.log("AeroFlow AI Loaded!");
+    console.log("AeroFlow Engine Loaded!");
     
     lastTime = performance.now();
     requestAnimationFrame(render);
