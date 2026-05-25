@@ -8,7 +8,8 @@
 body {
     background: #f8f9fa;
     color: #202124;
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
 }
@@ -208,12 +209,14 @@ body {
 /* Canvas Area */
 .canvas-container {
     flex: 1;
+    min-height: 0;
+    min-width: 0;
     display: flex;
     justify-content: center;
     align-items: center;
     background: #e8eaed;
     position: relative;
-    padding: 40px;
+    padding: 24px;
 }
 
 canvas {

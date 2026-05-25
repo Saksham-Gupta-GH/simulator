@@ -36,7 +36,7 @@ const emittersListEl = document.getElementById('emitters-list');
 
 // State
 let isDrawing = false;
-let simRunning = true;
+let simRunning = false;
 let activeTool = 'draw'; 
 let brushSize = 10;
 let shapeRot = 0; 
@@ -484,9 +484,13 @@ function initControls() {
         if (simRunning) {
             playBtn.innerHTML = '<i class="fa-solid fa-pause"></i> Pause';
             playBtn.classList.add('active');
+            playBtn.style.background = '#ffffff';
+            playBtn.style.color = '#3c4043';
         } else {
-            playBtn.innerHTML = '<i class="fa-solid fa-play"></i> Play';
+            playBtn.innerHTML = '<i class="fa-solid fa-play"></i> Start Sim';
             playBtn.classList.remove('active');
+            playBtn.style.background = '#1a73e8';
+            playBtn.style.color = '#ffffff';
         }
     });
 
