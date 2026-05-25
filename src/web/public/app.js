@@ -206,7 +206,7 @@ function handleDraw(e) {
             sim.drawObstacleBrush(gridX, gridY, brushRadius, false);
         } else if (activeBrush === 'emitter') {
             // Click to inject custom density dyes (drawn in high columns)
-            for (intOffset = -2; intOffset <= 2; intOffset++) {
+            for (let intOffset = -2; intOffset <= 2; intOffset++) {
                 const cy = gridY + intOffset;
                 if (cy >= 0 && cy < gridHeight) {
                     // We interact with density fields by drawing them directly
@@ -241,7 +241,7 @@ function startSimulationLoop() {
     const liftLabel = document.getElementById('stat-lift');
     const reynoldsLabel = document.getElementById('stat-reynolds');
 
-    const dt = 0.05f; // Timestep step
+    const dt = 0.05; // Timestep step
 
     function frame() {
         // Read current slider states to feed into C++ steps
