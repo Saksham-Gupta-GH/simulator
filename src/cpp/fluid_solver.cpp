@@ -53,12 +53,6 @@ void FluidSolver::clearObstacles() {
 }
 
 void FluidSolver::step() {
-    // Add continuous wind tunnel effect (injecting from left)
-    for (int y = N/4; y < 3*N/4; ++y) {
-        addDensity(1, y, windDensity);
-        addVelocity(1, y, windSpeed, 0.0f); // Blow to the right
-    }
-
     std::swap(Vx0, Vx);
     std::swap(Vy0, Vy);
     diffuse(1, Vx, Vx0, visc, dt);

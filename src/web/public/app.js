@@ -7,6 +7,7 @@ const iter = 16;
 const dt = 0.1;
 let diff = 0.0;
 let visc = 0.0000001;
+let globalDensity = 100.0;
 
 // UI Elements
 const canvas = document.getElementById('fluid-canvas');
@@ -19,10 +20,16 @@ const fpsCounter = document.getElementById('fps-counter');
 
 // State
 let isDrawing = false;
-let activeTool = 'draw'; // 'draw', 'erase', 'circle', 'rect', 'tri'
+let activeTool = 'draw'; // 'draw', 'erase', 'circle', 'rect', 'tri', 'src-point', 'src-line'
 let brushSize = 10;
 let shapeRot = 0; // Degrees
 let lastTime = performance.now();
+let lastMousePos = null;
+
+// Emitter Settings
+let srcDir = 0; // Degrees
+let srcSpeed = 50;
+let sources = [];
 
 function getCanvasPos(e) {
     const rect = canvas.getBoundingClientRect();
@@ -32,6 +39,21 @@ function getCanvasPos(e) {
         x: Math.floor((e.clientX - rect.left) * scaleX),
         y: Math.floor((e.clientY - rect.top) * scaleY)
     };
+}
+
+// Seamless Brush Interpolation (Lerp)
+function drawStroke(x0, y0, x1, y1) {
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const steps = Math.max(1, Math.floor(distance));
+    
+    for (let i = 0; i <= steps; i++) {
+        const t = steps === 0 ? 0 : i / steps;
+        const x = Math.round(x0 + dx * t);
+        const y = Math.round(y0 + dy * t);
+        stampShape(x, y);
+    }
 }
 
 function stampShape(cx, cy) {
@@ -54,14 +76,11 @@ function stampShape(cx, cy) {
         }
     } 
     else if (activeTool === 'rect') {
-        // Iterate over a bounding box large enough to hold the rotated rect
         const box = Math.ceil(half * 1.5);
         for (let i = -box; i <= box; i++) {
             for (let j = -box; j <= box; j++) {
-                // Rotate point back to local space
                 const rx = i * cosA - j * sinA;
                 const ry = i * sinA + j * cosA;
-                
                 if (rx >= -half && rx <= half && ry >= -half && ry <= half) {
                     solver.setObstacle(cx + i, cy + j, isSolid);
                 }
@@ -70,7 +89,6 @@ function stampShape(cx, cy) {
     }
     else if (activeTool === 'tri') {
         const box = Math.ceil(half * 1.5);
-        // Triangle vertices (pointing right originally)
         const p1 = {x: half, y: 0};
         const p2 = {x: -half, y: half};
         const p3 = {x: -half, y: -half};
@@ -100,6 +118,56 @@ function stampShape(cx, cy) {
     }
 }
 
+function placeSource(cx, cy) {
+    if (activeTool === 'src-point') {
+        sources.push({
+            type: 'point',
+            x: cx,
+            y: cy,
+            dir: srcDir,
+            speed: srcSpeed
+        });
+    } else if (activeTool === 'src-line') {
+        sources.push({
+            type: 'line',
+            x: cx,
+            y: cy,
+            length: brushSize * 2,
+            angle: shapeRot, // Orientation of the line
+            dir: srcDir,     // Direction the fluid is blowing
+            speed: srcSpeed
+        });
+    }
+}
+
+function applySources() {
+    if (!solver) return;
+    
+    for (const src of sources) {
+        const radDir = (src.dir * Math.PI) / 180;
+        const vx = Math.cos(radDir) * src.speed;
+        const vy = Math.sin(radDir) * src.speed;
+        
+        if (src.type === 'point') {
+            solver.addDensity(src.x, src.y, globalDensity);
+            solver.addVelocity(src.x, src.y, vx, vy);
+        } else if (src.type === 'line') {
+            const radAngle = (src.angle * Math.PI) / 180;
+            const cosA = Math.cos(radAngle);
+            const sinA = Math.sin(radAngle);
+            
+            // Iterate along the line
+            const half = src.length / 2;
+            for (let t = -half; t <= half; t++) {
+                const px = Math.round(src.x + t * cosA);
+                const py = Math.round(src.y + t * sinA);
+                solver.addDensity(px, py, globalDensity);
+                solver.addVelocity(px, py, vx, vy);
+            }
+        }
+    }
+}
+
 function initControls() {
     const drawBtn = document.getElementById('btn-draw');
     const eraseBtn = document.getElementById('btn-erase');
@@ -109,7 +177,11 @@ function initControls() {
     const shapeRect = document.getElementById('btn-shape-rect');
     const shapeTri = document.getElementById('btn-shape-tri');
     
-    const toolBtns = [drawBtn, eraseBtn, shapeCircle, shapeRect, shapeTri];
+    const srcPoint = document.getElementById('btn-src-point');
+    const srcLine = document.getElementById('btn-src-line');
+    const clearSrc = document.getElementById('btn-clear-src');
+    
+    const toolBtns = [drawBtn, eraseBtn, shapeCircle, shapeRect, shapeTri, srcPoint, srcLine];
     const setTool = (name, btn) => {
         activeTool = name;
         toolBtns.forEach(b => b.classList.remove('active'));
@@ -121,42 +193,40 @@ function initControls() {
     shapeCircle.addEventListener('click', () => setTool('circle', shapeCircle));
     shapeRect.addEventListener('click', () => setTool('rect', shapeRect));
     shapeTri.addEventListener('click', () => setTool('tri', shapeTri));
+    srcPoint.addEventListener('click', () => setTool('src-point', srcPoint));
+    srcLine.addEventListener('click', () => setTool('src-line', srcLine));
 
     clearBtn.addEventListener('click', () => {
         if (solver) solver.clearObstacles();
     });
-
-    const brushSlider = document.getElementById('brush-size');
-    const rotSlider = document.getElementById('shape-rot');
     
-    brushSlider.addEventListener('input', (e) => {
+    clearSrc.addEventListener('click', () => {
+        sources = [];
+    });
+
+    // Sliders
+    document.getElementById('brush-size').addEventListener('input', (e) => {
         brushSize = parseInt(e.target.value);
         document.getElementById('brush-size-val').innerText = brushSize;
     });
-    
-    rotSlider.addEventListener('input', (e) => {
+    document.getElementById('shape-rot').addEventListener('input', (e) => {
         shapeRot = parseInt(e.target.value);
         document.getElementById('shape-rot-val').innerText = shapeRot;
     });
-
-    // Fluid Properties
-    const propWind = document.getElementById('prop-wind');
-    const propDens = document.getElementById('prop-dens');
-    const propVisc = document.getElementById('prop-visc');
-
-    propWind.addEventListener('input', (e) => {
-        const val = parseFloat(e.target.value);
-        document.getElementById('prop-wind-val').innerText = val;
-        if(solver) solver.setWindSpeed(val);
+    document.getElementById('src-dir').addEventListener('input', (e) => {
+        srcDir = parseInt(e.target.value);
+        document.getElementById('src-dir-val').innerText = srcDir;
+    });
+    document.getElementById('src-speed').addEventListener('input', (e) => {
+        srcSpeed = parseInt(e.target.value);
+        document.getElementById('src-speed-val').innerText = srcSpeed;
     });
 
-    propDens.addEventListener('input', (e) => {
-        const val = parseFloat(e.target.value);
-        document.getElementById('prop-dens-val').innerText = val;
-        if(solver) solver.setWindDensity(val);
+    document.getElementById('prop-dens').addEventListener('input', (e) => {
+        globalDensity = parseFloat(e.target.value);
+        document.getElementById('prop-dens-val').innerText = globalDensity;
     });
-
-    propVisc.addEventListener('input', (e) => {
+    document.getElementById('prop-visc').addEventListener('input', (e) => {
         const val = parseFloat(e.target.value);
         document.getElementById('prop-visc-val').innerText = val.toFixed(4);
         if(solver) solver.setViscosity(val);
@@ -165,20 +235,32 @@ function initControls() {
     // Mouse Events
     canvas.addEventListener('mousedown', (e) => {
         const pos = getCanvasPos(e);
-        stampShape(pos.x, pos.y);
-        if (activeTool === 'draw' || activeTool === 'erase') {
+        lastMousePos = pos;
+        
+        if (activeTool.startsWith('src-')) {
+            placeSource(pos.x, pos.y);
+        } else {
             isDrawing = true;
+            stampShape(pos.x, pos.y);
         }
     });
 
     canvas.addEventListener('mousemove', (e) => {
         if (!isDrawing) return;
         const pos = getCanvasPos(e);
-        stampShape(pos.x, pos.y);
+        if (activeTool === 'draw' || activeTool === 'erase') {
+            drawStroke(lastMousePos.x, lastMousePos.y, pos.x, pos.y);
+        } else {
+            // Only stamp once per click for perfect shapes, or lerp?
+            // Usually, you don't drag perfect shapes, but if they do, just stamp.
+            stampShape(pos.x, pos.y);
+        }
+        lastMousePos = pos;
     });
 
     window.addEventListener('mouseup', () => {
         isDrawing = false;
+        lastMousePos = null;
     });
     
     canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -187,6 +269,7 @@ function initControls() {
 function render() {
     if (!solver || !moduleRef) return;
 
+    applySources();
     solver.step();
 
     const HEAPF32 = moduleRef.HEAPF32;
@@ -239,9 +322,17 @@ createFluidSimModule({
     
     solver = new module.FluidSolver(N, diff, visc, dt);
     
-    // Default shape
+    // Set an initial Wind Tunnel Source manually to replace the old C++ one
+    brushSize = 60; // Make it a large line
+    shapeRot = 90; // Vertical line
+    srcDir = 0; // Blowing right
+    srcSpeed = 50;
+    activeTool = 'src-line';
+    placeSource(2, N/2);
+    
+    // Add default aerodynamic obstacle
     brushSize = 15;
-    shapeRot = -20; // Angle it slightly upward to show aerodynamic lift!
+    shapeRot = -20;
     activeTool = 'rect';
     stampShape(70, 100);
     

@@ -46,11 +46,25 @@
             </div>
 
             <div class="control-section">
-                <h3>Fluid Properties</h3>
-                <div class="slider-group">
-                    <label>Wind Speed: <span id="prop-wind-val">50</span></label>
-                    <input type="range" id="prop-wind" min="0" max="150" value="50">
+                <h3>Fluid Emitters</h3>
+                <div class="btn-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px;">
+                    <button id="btn-src-point" class="glass-btn shape-btn"><i class="fa-solid fa-location-dot"></i> Point</button>
+                    <button id="btn-src-line" class="glass-btn shape-btn"><i class="fa-solid fa-grip-lines-vertical"></i> Line</button>
                 </div>
+                
+                <div class="slider-group">
+                    <label>Flow Direction: <span id="src-dir-val">0</span>°</label>
+                    <input type="range" id="src-dir" min="0" max="360" value="0">
+                </div>
+                <div class="slider-group">
+                    <label>Emitter Speed: <span id="src-speed-val">50</span></label>
+                    <input type="range" id="src-speed" min="0" max="200" value="50">
+                </div>
+                <button id="btn-clear-src" class="glass-btn danger" style="margin-top: 10px;"><i class="fa-solid fa-ban"></i> Clear Emitters</button>
+            </div>
+
+            <div class="control-section">
+                <h3>Global Properties</h3>
                 <div class="slider-group">
                     <label>Smoke Density: <span id="prop-dens-val">100</span></label>
                     <input type="range" id="prop-dens" min="0" max="255" value="100">
