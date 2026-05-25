@@ -9,12 +9,19 @@ let diff = 0.0;
 let visc = 0.0000001;
 let globalDensity = 100.0;
 
-// UI Elements
+// High-Res Rendering Engine
 const canvas = document.getElementById('fluid-canvas');
 const ctx = canvas.getContext('2d');
-canvas.width = N;
-canvas.height = N;
-let imgData = ctx.createImageData(N, N);
+const DISPLAY_SIZE = 1000; // Super HD internal rendering resolution
+canvas.width = DISPLAY_SIZE;
+canvas.height = DISPLAY_SIZE;
+
+// Low-Res Physics Buffer
+const offscreenCanvas = document.createElement('canvas');
+offscreenCanvas.width = N;
+offscreenCanvas.height = N;
+const offCtx = offscreenCanvas.getContext('2d');
+let imgData = offCtx.createImageData(N, N);
 
 const fpsCounter = document.getElementById('fps-counter');
 const srcCountEl = document.getElementById('src-count');
@@ -34,10 +41,11 @@ let dragStartPos = null;
 let sources = [];
 let sourceIdCounter = 1;
 
-function getCanvasPos(e) {
+// Converts a mouse event on the high-res canvas down to the 0..N physics grid
+function getPhysicsPos(e) {
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    const scaleX = N / rect.width;
+    const scaleY = N / rect.height;
     return {
         x: Math.floor((e.clientX - rect.left) * scaleX),
         y: Math.floor((e.clientY - rect.top) * scaleY)
@@ -96,7 +104,6 @@ function stampShapeBounds(x0, y0, x1, y1) {
     const cosA = Math.cos(-rad);
     const sinA = Math.sin(-rad);
 
-    // Calculate a generous bounding box to loop through
     const boxR = Math.ceil(Math.max(halfW, halfH) * 1.5);
 
     if (activeTool === 'circle') {
@@ -168,9 +175,9 @@ function placeSource(cx, cy) {
             type: 'line',
             x: cx,
             y: cy,
-            length: 100, // Default length
-            angle: shapeRot, // Line physical orientation
-            dir: shapeRot - 90, // Flow direction
+            length: 100, 
+            angle: shapeRot, 
+            dir: shapeRot - 90, 
             speed: 50
         });
     }
@@ -303,20 +310,23 @@ function applySources() {
 }
 
 // ----------------------------------------------------
-// Canvas Render Overlay
+// HD Canvas Render Overlay
 // ----------------------------------------------------
 function drawOverlay() {
-    ctx.lineWidth = 2;
-    ctx.font = "bold 14px Roboto";
+    // Calculate the scale factor from the physics grid to the HD display canvas
+    const scale = DISPLAY_SIZE / N;
+
+    ctx.lineWidth = 3;
+    ctx.font = "bold 24px Roboto";
     ctx.textBaseline = "middle";
     ctx.textAlign = "center";
 
     // 1. Draw MS-Paint Wireframe if dragging a shape
     if (isDrawing && dragStartPos && lastMousePos && (activeTool === 'rect' || activeTool === 'tri' || activeTool === 'circle')) {
-        const x0 = dragStartPos.x;
-        const y0 = dragStartPos.y;
-        const x1 = lastMousePos.x;
-        const y1 = lastMousePos.y;
+        const x0 = dragStartPos.x * scale;
+        const y0 = dragStartPos.y * scale;
+        const x1 = lastMousePos.x * scale;
+        const y1 = lastMousePos.y * scale;
         
         const cx = (x0 + x1) / 2;
         const cy = (y0 + y1) / 2;
@@ -328,8 +338,8 @@ function drawOverlay() {
         ctx.rotate((shapeRot * Math.PI) / 180);
         
         ctx.strokeStyle = '#d93025'; // Red wireframe
-        ctx.setLineDash([4, 4]);
-        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 8]);
+        ctx.lineWidth = 4;
         
         if (activeTool === 'rect') {
             ctx.strokeRect(-width/2, -height/2, width, height);
@@ -353,55 +363,60 @@ function drawOverlay() {
     // 2. Draw Emitters
     ctx.setLineDash([]);
     for (const src of sources) {
+        // Map physics coordinates to HD display coordinates
+        const hx = src.x * scale;
+        const hy = src.y * scale;
+
         if (src.type === 'point') {
             ctx.beginPath();
-            ctx.arc(src.x, src.y, 4, 0, Math.PI*2);
+            ctx.arc(hx, hy, 10, 0, Math.PI*2);
             ctx.fillStyle = '#1a73e8';
             ctx.fill();
             
             ctx.fillStyle = "#1a73e8";
-            ctx.fillText(src.id, src.x - 12, src.y - 12);
+            ctx.fillText(src.id, hx - 25, hy - 25);
             
             const radDir = (src.dir * Math.PI) / 180;
-            const ex = src.x + Math.cos(radDir) * 15;
-            const ey = src.y + Math.sin(radDir) * 15;
+            const ex = hx + Math.cos(radDir) * 40;
+            const ey = hy + Math.sin(radDir) * 40;
             
             ctx.beginPath();
-            ctx.moveTo(src.x, src.y);
+            ctx.moveTo(hx, hy);
             ctx.lineTo(ex, ey);
             ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 4;
             ctx.stroke();
 
         } else if (src.type === 'line') {
             const radAngle = (src.angle * Math.PI) / 180;
             const cosA = Math.cos(radAngle);
             const sinA = Math.sin(radAngle);
-            const half = src.length / 2;
+            const halfHD = (src.length / 2) * scale;
             
-            const sx = src.x - half * cosA;
-            const sy = src.y - half * sinA;
-            const ex = src.x + half * cosA;
-            const ey = src.y + half * sinA;
+            const sx = hx - halfHD * cosA;
+            const sy = hy - halfHD * sinA;
+            const ex = hx + halfHD * cosA;
+            const ey = hy + halfHD * sinA;
 
             ctx.beginPath();
             ctx.moveTo(sx, sy);
             ctx.lineTo(ex, ey);
             ctx.strokeStyle = '#1a73e8';
-            ctx.lineWidth = 3;
+            ctx.lineWidth = 6;
             ctx.stroke();
 
             ctx.fillStyle = "#1a73e8";
-            ctx.fillText(src.id, src.x, src.y - 15);
+            ctx.fillText(src.id, hx, hy - 30);
 
-            ctx.lineWidth = 1;
-            ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = 'rgba(255,255,255,0.8)';
             const radDir = (src.dir * Math.PI) / 180;
-            const dirX = Math.cos(radDir) * 15;
-            const dirY = Math.sin(radDir) * 15;
+            const dirX = Math.cos(radDir) * 30;
+            const dirY = Math.sin(radDir) * 30;
 
-            for (let t = -half; t <= half; t += 20) {
-                const px = src.x + t * cosA;
-                const py = src.y + t * sinA;
+            for (let t = -halfHD; t <= halfHD; t += (20 * scale)) {
+                const px = hx + t * cosA;
+                const py = hy + t * sinA;
                 ctx.beginPath();
                 ctx.moveTo(px, py);
                 ctx.lineTo(px + dirX, py + dirY);
@@ -432,9 +447,9 @@ function initControls() {
         N = newN;
         document.getElementById('res-val').innerText = `${N}x${N}`;
         
-        canvas.width = N;
-        canvas.height = N;
-        imgData = ctx.createImageData(N, N);
+        offscreenCanvas.width = N;
+        offscreenCanvas.height = N;
+        imgData = offCtx.createImageData(N, N);
         
         solver = new moduleRef.FluidSolver(N, diff, visc, dt);
         sources = [];
@@ -493,16 +508,15 @@ function initControls() {
 
     // Interaction Events
     canvas.addEventListener('mousedown', (e) => {
-        const pos = getCanvasPos(e);
+        const pos = getPhysicsPos(e);
         lastMousePos = pos;
         
         if (activeTool.startsWith('src-')) {
             placeSource(pos.x, pos.y);
         } else if (activeTool === 'rect' || activeTool === 'tri' || activeTool === 'circle') {
             isDrawing = true;
-            dragStartPos = pos; // MS Paint style drag start
+            dragStartPos = pos; 
         } else {
-            // Freehand / Erase
             isDrawing = true;
             stampBrush(pos.x, pos.y);
         }
@@ -510,7 +524,7 @@ function initControls() {
 
     canvas.addEventListener('mousemove', (e) => {
         if (!isDrawing) return;
-        const pos = getCanvasPos(e);
+        const pos = getPhysicsPos(e);
         
         if (activeTool === 'draw' || activeTool === 'erase') {
             drawStroke(lastMousePos.x, lastMousePos.y, pos.x, pos.y);
@@ -520,7 +534,6 @@ function initControls() {
 
     window.addEventListener('mouseup', () => {
         if (isDrawing && dragStartPos && lastMousePos && (activeTool === 'rect' || activeTool === 'tri' || activeTool === 'circle')) {
-            // Mouse released, stamp the dragged MS-Paint shape!
             stampShapeBounds(dragStartPos.x, dragStartPos.y, lastMousePos.x, lastMousePos.y);
         }
         isDrawing = false;
@@ -551,6 +564,7 @@ function render() {
 
     const data = imgData.data;
 
+    // Render fluid into low-res offscreen buffer
     for (let i = 0; i < size; i++) {
         const d = densityArray[i];
         const isWall = obsArray[i];
@@ -573,7 +587,13 @@ function render() {
         }
     }
 
-    ctx.putImageData(imgData, 0, 0);
+    offCtx.putImageData(imgData, 0, 0);
+
+    // Draw the low-res physics buffer onto the high-res display canvas smoothly
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(offscreenCanvas, 0, 0, DISPLAY_SIZE, DISPLAY_SIZE);
+    
+    // Draw crisp HD UI overlay on top
     drawOverlay();
 
     const now = performance.now();
@@ -608,7 +628,7 @@ createFluidSimModule({
     activeTool = 'draw';
     
     initControls();
-    console.log("AeroFlow Engine Loaded!");
+    console.log("AeroFlow HD Engine Loaded!");
     
     lastTime = performance.now();
     requestAnimationFrame(render);
