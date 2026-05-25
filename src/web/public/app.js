@@ -264,192 +264,199 @@ function startSimulationLoop() {
     const dt = 0.05; // Timestep step
 
     function frame() {
-        // Read current slider states to feed into C++ steps
-        const windSpeed = parseFloat(document.getElementById('param-wind-speed').value);
-        const viscosity = parseFloat(document.getElementById('param-viscosity').value);
+        try {
+            // Read current slider states to feed into C++ steps
+            const windSpeed = parseFloat(document.getElementById('param-wind-speed').value);
+            const viscosity = parseFloat(document.getElementById('param-viscosity').value);
 
-        // 1. Advance C++ physics simulation by active speed multiplier
-        for (let s = 0; s < activeSpeedMultiplier; ++s) {
-            sim.update(dt, viscosity, windSpeed);
-        }
+            // 1. Advance C++ physics simulation by active speed multiplier
+            for (let s = 0; s < activeSpeedMultiplier; ++s) {
+                sim.update(dt, viscosity, windSpeed);
+            }
 
-        // 2. Perform zero-copy pointer wraps
-        const HEAPU8 = moduleRef.HEAPU8;
-        const HEAPF32 = moduleRef.HEAPF32;
+            // 2. Perform zero-copy pointer wraps
+            const HEAPU8 = moduleRef.HEAPU8;
+            const HEAPF32 = moduleRef.HEAPF32;
 
-        const uPtr = sim.getUPtr();
-        const vPtr = sim.getVPtr();
-        const pPtr = sim.getPressurePtr();
-        const dPtr = sim.getDensityPtr();
-        const obsPtr = sim.getObstaclePtr();
-        const partPtr = sim.getParticlesPtr();
-        const partCount = sim.getParticleCount();
+            const uPtr = sim.getUPtr();
+            const vPtr = sim.getVPtr();
+            const pPtr = sim.getPressurePtr();
+            const dPtr = sim.getDensityPtr();
+            const obsPtr = sim.getObstaclePtr();
+            const partPtr = sim.getParticlesPtr();
+            const partCount = sim.getParticleCount();
 
-        // Directly reference subarrays on WebAssembly memory heap without copying data!
-        const obstacles = new Uint8Array(HEAPU8.buffer, obsPtr, gridSize);
-        const pressures = new Float32Array(HEAPF32.buffer, pPtr, gridSize);
-        const densities = new Float32Array(HEAPF32.buffer, dPtr, gridSize);
-        const velocitiesU = new Float32Array(HEAPF32.buffer, uPtr, gridSize);
-        const velocitiesV = new Float32Array(HEAPF32.buffer, vPtr, gridSize);
-        const particles = new Float32Array(HEAPF32.buffer, partPtr, partCount * 3);
+            // Directly reference subarrays on WebAssembly memory heap without copying data!
+            const obstacles = new Uint8Array(HEAPU8.buffer, obsPtr, gridSize);
+            const pressures = new Float32Array(HEAPF32.buffer, pPtr, gridSize);
+            const densities = new Float32Array(HEAPF32.buffer, dPtr, gridSize);
+            const velocitiesU = new Float32Array(HEAPF32.buffer, uPtr, gridSize);
+            const velocitiesV = new Float32Array(HEAPF32.buffer, vPtr, gridSize);
+            const particles = new Float32Array(HEAPF32.buffer, partPtr, partCount * 3);
 
-        // 3. Clear canvas and draw visualizations
-        ctx.fillStyle = '#080b11';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // 3. Clear canvas and draw visualizations
+            ctx.fillStyle = '#080b11';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Render backgrounds layers depending on active vis selection
-        if (activeVis === 'pressure') {
-            // PRESSURE HEATMAP: Scale pressure values to glowing color arrays
-            const data = offscreenImgData.data;
-            for (let i = 0; i < gridSize; ++i) {
-                if (obstacles[i] === 1) {
-                    // Obstacles rendered as dark charcoal
-                    data[i * 4] = 13;     // R
-                    data[i * 4 + 1] = 17; // G
-                    data[i * 4 + 2] = 25; // B
+            // Render backgrounds layers depending on active vis selection
+            if (activeVis === 'pressure') {
+                // PRESSURE HEATMAP: Scale pressure values to glowing color arrays
+                const data = offscreenImgData.data;
+                for (let i = 0; i < gridSize; ++i) {
+                    if (obstacles[i] === 1) {
+                        // Obstacles rendered as dark charcoal
+                        data[i * 4] = 13;     // R
+                        data[i * 4 + 1] = 17; // G
+                        data[i * 4 + 2] = 25; // B
+                        data[i * 4 + 3] = 255;
+                        continue;
+                    }
+                    
+                    // Normalizing pressures around baseline
+                    const pVal = pressures[i] * 12.0; 
+                    
+                    let r = 0, g = 0, b = 0;
+                    if (pVal > 0) {
+                        // High pressure -> glowing orange/red
+                        r = Math.min(255, Math.floor(pVal * 190 + 20));
+                        g = Math.min(255, Math.floor(pVal * 60));
+                        b = Math.min(255, Math.floor(pVal * 10));
+                    } else {
+                        // Low pressure (vacuum suction) -> deep indigo/violet
+                        const nVal = Math.abs(pVal);
+                        r = Math.min(255, Math.floor(nVal * 60));
+                        g = Math.min(255, Math.floor(nVal * 30));
+                        b = Math.min(255, Math.floor(nVal * 220 + 40));
+                    }
+
+                    // Add faint baseline ambient cyan to normal channels
+                    data[i * 4] = Math.max(r, 6);
+                    data[i * 4 + 1] = Math.max(g, 15);
+                    data[i * 4 + 2] = Math.max(b, 25);
                     data[i * 4 + 3] = 255;
-                    continue;
                 }
                 
-                // Normalizing pressures around baseline
-                const pVal = pressures[i] * 12.0; 
+                // Push offscreen pixel buffer onto offscreen canvas
+                offscreenCtx.putImageData(offscreenImgData, 0, 0);
                 
-                let r = 0, g = 0, b = 0;
-                if (pVal > 0) {
-                    // High pressure -> glowing orange/red
-                    r = Math.min(255, Math.floor(pVal * 190 + 20));
-                    g = Math.min(255, Math.floor(pVal * 60));
-                    b = Math.min(255, Math.floor(pVal * 10));
-                } else {
-                    // Low pressure (vacuum suction) -> deep indigo/violet
-                    const nVal = Math.abs(pVal);
-                    r = Math.min(255, Math.floor(nVal * 60));
-                    g = Math.min(255, Math.floor(nVal * 30));
-                    b = Math.min(255, Math.floor(nVal * 220 + 40));
-                }
+                // Scale the offscreen canvas up onto the 900x600 canvas using GPU bilinear interpolation
+                ctx.imageSmoothingEnabled = true;
+                ctx.drawImage(offscreenCanvas, 0, 0, canvas.width, canvas.height);
+                
+            } else if (activeVis === 'vector') {
+                // VELOCITY VECTORS: Draw simple velocity direction arrows
+                ctx.strokeStyle = 'rgba(6, 182, 212, 0.22)';
+                ctx.lineWidth = 1;
+                
+                const stride = 5; // Draw vectors at every 5th cell to prevent visual overcrowding
+                for (let y = 2; y < gridHeight - 2; y += stride) {
+                    for (let x = 2; x < gridWidth - 2; x += stride) {
+                        const idx = x + y * gridWidth;
+                        if (obstacles[idx] === 1) continue;
 
-                // Add faint baseline ambient cyan to normal channels
-                data[i * 4] = Math.max(r, 6);
-                data[i * 4 + 1] = Math.max(g, 15);
-                data[i * 4 + 2] = Math.max(b, 25);
-                data[i * 4 + 3] = 255;
-            }
-            
-            // Push offscreen pixel buffer onto offscreen canvas
-            offscreenCtx.putImageData(offscreenImgData, 0, 0);
-            
-            // Scale the offscreen canvas up onto the 900x600 canvas using GPU bilinear interpolation
-            ctx.imageSmoothingEnabled = true;
-            ctx.drawImage(offscreenCanvas, 0, 0, canvas.width, canvas.height);
-            
-        } else if (activeVis === 'vector') {
-            // VELOCITY VECTORS: Draw simple velocity direction arrows
-            ctx.strokeStyle = 'rgba(6, 182, 212, 0.22)';
-            ctx.lineWidth = 1;
-            
-            const stride = 5; // Draw vectors at every 5th cell to prevent visual overcrowding
-            for (let y = 2; y < gridHeight - 2; y += stride) {
-                for (let x = 2; x < gridWidth - 2; x += stride) {
-                    const idx = x + y * gridWidth;
-                    if (obstacles[idx] === 1) continue;
+                        const uVal = velocitiesU[idx] * 8.0;
+                        const vVal = velocitiesV[idx] * 8.0;
+                        const speed = Math.sqrt(uVal * uVal + vVal * vVal);
 
-                    const uVal = velocitiesU[idx] * 8.0;
-                    const vVal = velocitiesV[idx] * 8.0;
-                    const speed = Math.sqrt(uVal * uVal + vVal * vVal);
+                        const startX = x * cellScale + cellScale / 2;
+                        const startY = y * cellScale + cellScale / 2;
 
-                    const startX = x * cellScale + cellScale / 2;
-                    const startY = y * cellScale + cellScale / 2;
-
-                    ctx.beginPath();
-                    ctx.moveTo(startX, startY);
-                    ctx.lineTo(startX + uVal * cellScale, startY + vVal * cellScale);
-                    ctx.stroke();
-                }
-            }
-        }
-
-        // Render flowing smoke streamlines (Particles)
-        if (activeVis === 'smoke') {
-            // Draw 8,000 glowing vector smoke particles
-            for (let i = 0; i < partCount; ++i) {
-                const px = particles[i * 3] * cellScale;
-                const py = particles[i * 3 + 1] * cellScale;
-                const speed = particles[i * 3 + 2] * 2.8;
-
-                // Colorize streamlines dynamically based on speed (Bernoulli coloring!)
-                let color = 'rgba(6, 182, 212, 0.42)'; // cyan default (standard speed)
-                if (speed > 4.5) {
-                    color = 'rgba(168, 85, 247, 0.65)'; // Violet/Purple (accelerated flow / lift)
-                } else if (speed < 0.6) {
-                    color = 'rgba(249, 115, 22, 0.40)'; // Amber/Orange (wake turbulence stagnation)
-                }
-
-                ctx.fillStyle = color;
-                ctx.fillRect(px, py, 1.5, 1.5);
-            }
-        } else {
-            // Draw faint smoke streamlines on top of pressure or vector modes to preserve reference flow
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-            for (let i = 0; i < partCount; i += 2) {
-                const px = particles[i * 3] * cellScale;
-                const py = particles[i * 3 + 1] * cellScale;
-                ctx.fillRect(px, py, 1.0, 1.0);
-            }
-        }
-
-        // 4. Paint rigid solid obstacles on top (Paint barriers)
-        ctx.fillStyle = '#0d1119';
-        ctx.strokeStyle = '#06b6d4';
-        ctx.lineWidth = 1.5;
-
-        for (let y = 1; y < gridHeight - 1; ++y) {
-            for (let x = 1; x < gridWidth - 1; ++x) {
-                const idx = x + y * gridWidth;
-                if (obstacles[idx] === 1) {
-                    const startX = x * cellScale;
-                    const startY = y * cellScale;
-                    
-                    ctx.fillRect(startX, startY, cellScale, cellScale);
-                    
-                    // Draw outer border outlines for neighboring fluid faces
-                    if (obstacles[idx - 1] === 0 || obstacles[idx + 1] === 0 || 
-                        obstacles[idx - gridWidth] === 0 || obstacles[idx + gridWidth] === 0) {
-                        ctx.strokeRect(startX, startY, cellScale, cellScale);
+                        ctx.beginPath();
+                        ctx.moveTo(startX, startY);
+                        ctx.lineTo(startX + uVal * cellScale, startY + vVal * cellScale);
+                        ctx.stroke();
                     }
                 }
             }
+
+            // Render flowing smoke streamlines (Particles)
+            if (activeVis === 'smoke') {
+                // Draw 8,000 glowing vector smoke particles
+                for (let i = 0; i < partCount; ++i) {
+                    const px = particles[i * 3] * cellScale;
+                    const py = particles[i * 3 + 1] * cellScale;
+                    const speed = particles[i * 3 + 2] * 2.8;
+
+                    // Colorize streamlines dynamically based on speed (Bernoulli coloring!)
+                    let color = 'rgba(6, 182, 212, 0.42)'; // cyan default (standard speed)
+                    if (speed > 4.5) {
+                        color = 'rgba(168, 85, 247, 0.65)'; // Violet/Purple (accelerated flow / lift)
+                    } else if (speed < 0.6) {
+                        color = 'rgba(249, 115, 22, 0.40)'; // Amber/Orange (wake turbulence stagnation)
+                    }
+
+                    ctx.fillStyle = color;
+                    ctx.fillRect(px, py, 1.5, 1.5);
+                }
+            } else {
+                // Draw faint smoke streamlines on top of pressure or vector modes to preserve reference flow
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+                for (let i = 0; i < partCount; i += 2) {
+                    const px = particles[i * 3] * cellScale;
+                    const py = particles[i * 3 + 1] * cellScale;
+                    ctx.fillRect(px, py, 1.0, 1.0);
+                }
+            }
+
+            // 4. Paint rigid solid obstacles on top (Paint barriers)
+            ctx.fillStyle = '#0d1119';
+            ctx.strokeStyle = '#06b6d4';
+            ctx.lineWidth = 1.5;
+
+            for (let y = 1; y < gridHeight - 1; ++y) {
+                for (let x = 1; x < gridWidth - 1; ++x) {
+                    const idx = x + y * gridWidth;
+                    if (obstacles[idx] === 1) {
+                        const startX = x * cellScale;
+                        const startY = y * cellScale;
+                        
+                        ctx.fillRect(startX, startY, cellScale, cellScale);
+                        
+                        // Draw outer border outlines for neighboring fluid faces
+                        if (obstacles[idx - 1] === 0 || obstacles[idx + 1] === 0 || 
+                            obstacles[idx - gridWidth] === 0 || obstacles[idx + gridWidth] === 0) {
+                            ctx.strokeRect(startX, startY, cellScale, cellScale);
+                        }
+                    }
+                }
+            }
+
+            // 5. Update Telemetry displays
+            const dragVal = sim.getDragCoefficient();
+            const liftVal = sim.getLiftCoefficient();
+            const reynoldsVal = Math.round(sim.getReynoldsNumber());
+
+            dragLabel.innerText = dragVal.toFixed(3);
+            liftLabel.innerText = liftVal.toFixed(3);
+            reynoldsLabel.innerText = reynoldsVal.toLocaleString();
+
+            // Style telemetry labels based on active aero states (F1 downforce warning)
+            if (liftVal < -0.05) {
+                liftLabel.className = "stat-val text-orange";
+                liftLabel.innerText = liftVal.toFixed(3) + " DF"; // Downforce
+            } else if (liftVal > 0.05) {
+                liftLabel.className = "stat-val text-cyan";
+            } else {
+                liftLabel.className = "stat-val";
+            }
+
+            // Calculate and push active Lift-to-Drag ratio to history array
+            const ldRatio = (Math.abs(dragVal) > 0.002) ? (liftVal / dragVal) : 0.0;
+            ldHistory.push(ldRatio);
+            if (ldHistory.length > maxHistoryLength) {
+                ldHistory.shift();
+            }
+
+            // 6. Render real-time Efficiency Line Chart
+            renderEfficiencyChart(chartCtx, chartCanvas);
+
+            requestAnimationFrame(frame);
+        } catch (e) {
+            console.error("Frame crash: ", e);
+            ctx.fillStyle = 'red';
+            ctx.font = '20px monospace';
+            ctx.fillText("CRASH: " + e.message, 20, 40);
         }
-
-        // 5. Update Telemetry displays
-        const dragVal = sim.getDragCoefficient();
-        const liftVal = sim.getLiftCoefficient();
-        const reynoldsVal = Math.round(sim.getReynoldsNumber());
-
-        dragLabel.innerText = dragVal.toFixed(3);
-        liftLabel.innerText = liftVal.toFixed(3);
-        reynoldsLabel.innerText = reynoldsVal.toLocaleString();
-
-        // Style telemetry labels based on active aero states (F1 downforce warning)
-        if (liftVal < -0.05) {
-            liftLabel.className = "stat-val text-orange";
-            liftLabel.innerText = liftVal.toFixed(3) + " DF"; // Downforce
-        } else if (liftVal > 0.05) {
-            liftLabel.className = "stat-val text-cyan";
-        } else {
-            liftLabel.className = "stat-val";
-        }
-
-        // Calculate and push active Lift-to-Drag ratio to history array
-        const ldRatio = (Math.abs(dragVal) > 0.002) ? (liftVal / dragVal) : 0.0;
-        ldHistory.push(ldRatio);
-        if (ldHistory.length > maxHistoryLength) {
-            ldHistory.shift();
-        }
-
-        // 6. Render real-time Efficiency Line Chart
-        renderEfficiencyChart(chartCtx, chartCanvas);
-
-        requestAnimationFrame(frame);
     }
 
     requestAnimationFrame(frame);
