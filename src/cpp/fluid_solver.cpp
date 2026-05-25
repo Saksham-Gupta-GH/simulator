@@ -3,7 +3,7 @@
 #define IX(x, y) ((x) + (y) * N)
 
 FluidSolver::FluidSolver(int N, float diffusion, float viscosity, float dt)
-    : N(N), dt(dt), diff(diffusion), visc(viscosity) {
+    : N(N), dt(dt), diff(diffusion), visc(viscosity), windSpeed(50.0f), windDensity(100.0f) {
     
     size = N * N;
     iter = 16; // Solver iterations
@@ -18,6 +18,11 @@ FluidSolver::FluidSolver(int N, float diffusion, float viscosity, float dt)
 
     obstacles.resize(size, 0);
 }
+
+void FluidSolver::setViscosity(float v) { visc = v; }
+void FluidSolver::setDiffusion(float d) { diff = d; }
+void FluidSolver::setWindSpeed(float s) { windSpeed = s; }
+void FluidSolver::setWindDensity(float d) { windDensity = d; }
 
 void FluidSolver::addDensity(int x, int y, float amount) {
     if (x >= 0 && x < N && y >= 0 && y < N) {
@@ -50,8 +55,8 @@ void FluidSolver::clearObstacles() {
 void FluidSolver::step() {
     // Add continuous wind tunnel effect (injecting from left)
     for (int y = N/4; y < 3*N/4; ++y) {
-        addDensity(1, y, 100.0f);
-        addVelocity(1, y, 50.0f, 0.0f); // Blow to the right
+        addDensity(1, y, windDensity);
+        addVelocity(1, y, windSpeed, 0.0f); // Blow to the right
     }
 
     std::swap(Vx0, Vx);

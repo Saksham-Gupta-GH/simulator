@@ -12,6 +12,8 @@ private:
     float dt;
     float diff;
     float visc;
+    float windSpeed;
+    float windDensity;
 
     std::vector<float> s;
     std::vector<float> density;
@@ -31,6 +33,11 @@ private:
 
 public:
     FluidSolver(int N, float diffusion, float viscosity, float dt);
+
+    void setViscosity(float v);
+    void setDiffusion(float d);
+    void setWindSpeed(float s);
+    void setWindDensity(float d);
 
     void step();
     void addDensity(int x, int y, float amount);

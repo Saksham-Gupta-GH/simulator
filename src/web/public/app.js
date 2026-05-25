@@ -5,13 +5,12 @@ let solver = null;
 const N = 200;
 const iter = 16;
 const dt = 0.1;
-const diff = 0.0;
-const visc = 0.0000001;
+let diff = 0.0;
+let visc = 0.0000001;
 
 // UI Elements
 const canvas = document.getElementById('fluid-canvas');
 const ctx = canvas.getContext('2d');
-// Canvas CSS size is handled by Flexbox, internal resolution is N x N
 canvas.width = N;
 canvas.height = N;
 
@@ -20,8 +19,9 @@ const fpsCounter = document.getElementById('fps-counter');
 
 // State
 let isDrawing = false;
-let activeTool = 'draw'; // 'draw' or 'erase'
+let activeTool = 'draw'; // 'draw', 'erase', 'circle', 'rect', 'tri'
 let brushSize = 10;
+let shapeRot = 0; // Degrees
 let lastTime = performance.now();
 
 function getCanvasPos(e) {
@@ -34,14 +34,67 @@ function getCanvasPos(e) {
     };
 }
 
-function applyBrush(x, y) {
+function stampShape(cx, cy) {
     if (!solver) return;
-    const isSolid = activeTool === 'draw';
-    // Draw a circle
-    for (let i = -brushSize; i <= brushSize; i++) {
-        for (let j = -brushSize; j <= brushSize; j++) {
-            if (i*i + j*j <= brushSize*brushSize) {
-                solver.setObstacle(x + i, y + j, isSolid);
+    const isSolid = activeTool !== 'erase';
+    
+    const rad = (shapeRot * Math.PI) / 180;
+    const cosA = Math.cos(-rad);
+    const sinA = Math.sin(-rad);
+
+    const half = brushSize;
+
+    if (activeTool === 'draw' || activeTool === 'erase' || activeTool === 'circle') {
+        for (let i = -half; i <= half; i++) {
+            for (let j = -half; j <= half; j++) {
+                if (i*i + j*j <= half*half) {
+                    solver.setObstacle(cx + i, cy + j, isSolid);
+                }
+            }
+        }
+    } 
+    else if (activeTool === 'rect') {
+        // Iterate over a bounding box large enough to hold the rotated rect
+        const box = Math.ceil(half * 1.5);
+        for (let i = -box; i <= box; i++) {
+            for (let j = -box; j <= box; j++) {
+                // Rotate point back to local space
+                const rx = i * cosA - j * sinA;
+                const ry = i * sinA + j * cosA;
+                
+                if (rx >= -half && rx <= half && ry >= -half && ry <= half) {
+                    solver.setObstacle(cx + i, cy + j, isSolid);
+                }
+            }
+        }
+    }
+    else if (activeTool === 'tri') {
+        const box = Math.ceil(half * 1.5);
+        // Triangle vertices (pointing right originally)
+        const p1 = {x: half, y: 0};
+        const p2 = {x: -half, y: half};
+        const p3 = {x: -half, y: -half};
+        
+        function sign(p1, p2, p3) {
+            return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+        }
+
+        for (let i = -box; i <= box; i++) {
+            for (let j = -box; j <= box; j++) {
+                const rx = i * cosA - j * sinA;
+                const ry = i * sinA + j * cosA;
+                
+                const pt = {x: rx, y: ry};
+                const d1 = sign(pt, p1, p2);
+                const d2 = sign(pt, p2, p3);
+                const d3 = sign(pt, p3, p1);
+                
+                const has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+                const has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+                
+                if (!(has_neg && has_pos)) {
+                    solver.setObstacle(cx + i, cy + j, isSolid);
+                }
             }
         }
     }
@@ -51,48 +104,83 @@ function initControls() {
     const drawBtn = document.getElementById('btn-draw');
     const eraseBtn = document.getElementById('btn-erase');
     const clearBtn = document.getElementById('btn-clear');
-    const brushSlider = document.getElementById('brush-size');
-    const brushVal = document.getElementById('brush-size-val');
+    
+    const shapeCircle = document.getElementById('btn-shape-circle');
+    const shapeRect = document.getElementById('btn-shape-rect');
+    const shapeTri = document.getElementById('btn-shape-tri');
+    
+    const toolBtns = [drawBtn, eraseBtn, shapeCircle, shapeRect, shapeTri];
+    const setTool = (name, btn) => {
+        activeTool = name;
+        toolBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    };
 
-    drawBtn.addEventListener('click', () => {
-        activeTool = 'draw';
-        drawBtn.classList.add('active');
-        eraseBtn.classList.remove('active');
-    });
-
-    eraseBtn.addEventListener('click', () => {
-        activeTool = 'erase';
-        eraseBtn.classList.add('active');
-        drawBtn.classList.remove('active');
-    });
+    drawBtn.addEventListener('click', () => setTool('draw', drawBtn));
+    eraseBtn.addEventListener('click', () => setTool('erase', eraseBtn));
+    shapeCircle.addEventListener('click', () => setTool('circle', shapeCircle));
+    shapeRect.addEventListener('click', () => setTool('rect', shapeRect));
+    shapeTri.addEventListener('click', () => setTool('tri', shapeTri));
 
     clearBtn.addEventListener('click', () => {
         if (solver) solver.clearObstacles();
     });
 
+    const brushSlider = document.getElementById('brush-size');
+    const rotSlider = document.getElementById('shape-rot');
+    
     brushSlider.addEventListener('input', (e) => {
         brushSize = parseInt(e.target.value);
-        brushVal.innerText = brushSize;
+        document.getElementById('brush-size-val').innerText = brushSize;
+    });
+    
+    rotSlider.addEventListener('input', (e) => {
+        shapeRot = parseInt(e.target.value);
+        document.getElementById('shape-rot-val').innerText = shapeRot;
+    });
+
+    // Fluid Properties
+    const propWind = document.getElementById('prop-wind');
+    const propDens = document.getElementById('prop-dens');
+    const propVisc = document.getElementById('prop-visc');
+
+    propWind.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        document.getElementById('prop-wind-val').innerText = val;
+        if(solver) solver.setWindSpeed(val);
+    });
+
+    propDens.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        document.getElementById('prop-dens-val').innerText = val;
+        if(solver) solver.setWindDensity(val);
+    });
+
+    propVisc.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        document.getElementById('prop-visc-val').innerText = val.toFixed(4);
+        if(solver) solver.setViscosity(val);
     });
 
     // Mouse Events
     canvas.addEventListener('mousedown', (e) => {
-        isDrawing = true;
         const pos = getCanvasPos(e);
-        applyBrush(pos.x, pos.y);
+        stampShape(pos.x, pos.y);
+        if (activeTool === 'draw' || activeTool === 'erase') {
+            isDrawing = true;
+        }
     });
 
     canvas.addEventListener('mousemove', (e) => {
         if (!isDrawing) return;
         const pos = getCanvasPos(e);
-        applyBrush(pos.x, pos.y);
+        stampShape(pos.x, pos.y);
     });
 
     window.addEventListener('mouseup', () => {
         isDrawing = false;
     });
     
-    // Prevent context menu
     canvas.addEventListener('contextmenu', e => e.preventDefault());
 }
 
@@ -113,7 +201,6 @@ function render() {
 
     const data = imgData.data;
 
-    // Render loop
     for (let i = 0; i < size; i++) {
         const d = densityArray[i];
         const isWall = obsArray[i];
@@ -121,27 +208,22 @@ function render() {
         const pxIdx = i * 4;
 
         if (isWall) {
-            // Neon pink wall
             data[pxIdx] = 255;
             data[pxIdx + 1] = 0;
             data[pxIdx + 2] = 255;
             data[pxIdx + 3] = 255;
         } else {
-            // Cyan smoke intensity
-            // Map density to brightness
-            const brightness = Math.min(255, d * 2.5); // Boost visual intensity
+            const brightness = Math.min(255, d * 2.5); 
             
-            // Render against a very dark blue background (0, 5, 15)
-            data[pxIdx] = brightness * 0.1;       // R
-            data[pxIdx + 1] = brightness * 0.8 + 5;  // G
-            data[pxIdx + 2] = brightness * 1.0 + 15; // B
-            data[pxIdx + 3] = 255;                // A
+            data[pxIdx] = brightness * 0.1;       
+            data[pxIdx + 1] = brightness * 0.8 + 5;  
+            data[pxIdx + 2] = brightness * 1.0 + 15; 
+            data[pxIdx + 3] = 255;                
         }
     }
 
     ctx.putImageData(imgData, 0, 0);
 
-    // Calculate FPS
     const now = performance.now();
     const frameTime = now - lastTime;
     lastTime = now;
@@ -150,7 +232,6 @@ function render() {
     requestAnimationFrame(render);
 }
 
-// Load WebAssembly
 createFluidSimModule({
     locateFile: (path) => path.endsWith('.wasm') ? 'wasm/' + path : path
 }).then((module) => {
@@ -158,15 +239,16 @@ createFluidSimModule({
     
     solver = new module.FluidSolver(N, diff, visc, dt);
     
-    // Draw an initial aerodynamic teardrop shape
-    solver.setObstacle(80, 100, true);
-    for(let i=-20; i<20; i++) {
-        for(let j=-10; j<10; j++) {
-            if (i*i/400 + j*j/100 <= 1) {
-                solver.setObstacle(80 + i, 100 + j, true);
-            }
-        }
-    }
+    // Default shape
+    brushSize = 15;
+    shapeRot = -20; // Angle it slightly upward to show aerodynamic lift!
+    activeTool = 'rect';
+    stampShape(70, 100);
+    
+    // Reset back to defaults for user
+    brushSize = 10;
+    shapeRot = 0;
+    activeTool = 'draw';
     
     initControls();
     console.log("AeroFlow AI Loaded!");

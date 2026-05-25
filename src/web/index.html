@@ -21,15 +21,43 @@
                 <h3>Wind Tunnel Tools</h3>
                 <p class="subtitle">Draw obstacles to test aerodynamics.</p>
                 
-                <div class="btn-group">
-                    <button id="btn-draw" class="glass-btn active"><i class="fa-solid fa-pen"></i> Draw Obstacle</button>
+                <div class="btn-group" style="margin-bottom: 10px;">
+                    <button id="btn-draw" class="glass-btn active"><i class="fa-solid fa-pen"></i> Freehand Draw</button>
                     <button id="btn-erase" class="glass-btn"><i class="fa-solid fa-eraser"></i> Eraser</button>
-                    <button id="btn-clear" class="glass-btn danger"><i class="fa-solid fa-trash"></i> Clear All</button>
+                </div>
+                
+                <p class="subtitle" style="margin-top: 15px;">Insert Perfect Shape</p>
+                <div class="btn-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                    <button id="btn-shape-circle" class="glass-btn shape-btn"><i class="fa-regular fa-circle"></i> Circle</button>
+                    <button id="btn-shape-rect" class="glass-btn shape-btn"><i class="fa-regular fa-square"></i> Rect</button>
+                    <button id="btn-shape-tri" class="glass-btn shape-btn" style="grid-column: span 2;"><i class="fa-solid fa-caret-up"></i> Triangle</button>
                 </div>
                 
                 <div class="slider-group">
-                    <label>Brush Size: <span id="brush-size-val">10</span>px</label>
-                    <input type="range" id="brush-size" min="2" max="30" value="10">
+                    <label>Brush/Shape Size: <span id="brush-size-val">10</span>px</label>
+                    <input type="range" id="brush-size" min="2" max="60" value="10">
+                </div>
+                <div class="slider-group">
+                    <label>Shape Rotation: <span id="shape-rot-val">0</span>°</label>
+                    <input type="range" id="shape-rot" min="0" max="360" value="0">
+                </div>
+                
+                <button id="btn-clear" class="glass-btn danger" style="margin-top: 15px;"><i class="fa-solid fa-trash"></i> Clear Tunnel</button>
+            </div>
+
+            <div class="control-section">
+                <h3>Fluid Properties</h3>
+                <div class="slider-group">
+                    <label>Wind Speed: <span id="prop-wind-val">50</span></label>
+                    <input type="range" id="prop-wind" min="0" max="150" value="50">
+                </div>
+                <div class="slider-group">
+                    <label>Smoke Density: <span id="prop-dens-val">100</span></label>
+                    <input type="range" id="prop-dens" min="0" max="255" value="100">
+                </div>
+                <div class="slider-group">
+                    <label>Viscosity: <span id="prop-visc-val">0.000</span></label>
+                    <input type="range" id="prop-visc" min="0" max="0.01" step="0.0001" value="0">
                 </div>
             </div>
 
