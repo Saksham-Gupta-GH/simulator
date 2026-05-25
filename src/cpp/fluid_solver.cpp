@@ -153,10 +153,12 @@ void FluidSolver::project(std::vector<float>& u, std::vector<float>& v, std::vec
     for (int j = 1; j < N - 1; j++) {
         for (int i = 1; i < N - 1; i++) {
             if (!obstacles[IX(i, j)]) {
-                div[IX(i, j)] =
-                    -0.5f * h *
-                    (u[IX(i + 1, j)] - u[IX(i - 1, j)] +
-                     v[IX(i, j + 1)] - v[IX(i, j - 1)]);
+                float uRight = obstacles[IX(i + 1, j)] ? 0 : u[IX(i + 1, j)];
+                float uLeft  = obstacles[IX(i - 1, j)] ? 0 : u[IX(i - 1, j)];
+                float vUp    = obstacles[IX(i, j + 1)] ? 0 : v[IX(i, j + 1)];
+                float vDown  = obstacles[IX(i, j - 1)] ? 0 : v[IX(i, j - 1)];
+                
+                div[IX(i, j)] = -0.5f * h * (uRight - uLeft + vUp - vDown);
                 p[IX(i, j)] = 0;
             } else {
                 div[IX(i, j)] = 0;
@@ -172,8 +174,13 @@ void FluidSolver::project(std::vector<float>& u, std::vector<float>& v, std::vec
     for (int j = 1; j < N - 1; j++) {
         for (int i = 1; i < N - 1; i++) {
             if (!obstacles[IX(i, j)]) {
-                u[IX(i, j)] -= 0.5f * (p[IX(i + 1, j)] - p[IX(i - 1, j)]) / h;
-                v[IX(i, j)] -= 0.5f * (p[IX(i, j + 1)] - p[IX(i, j - 1)]) / h;
+                float pRight = obstacles[IX(i + 1, j)] ? p[IX(i, j)] : p[IX(i + 1, j)];
+                float pLeft  = obstacles[IX(i - 1, j)] ? p[IX(i, j)] : p[IX(i - 1, j)];
+                float pUp    = obstacles[IX(i, j + 1)] ? p[IX(i, j)] : p[IX(i, j + 1)];
+                float pDown  = obstacles[IX(i, j - 1)] ? p[IX(i, j)] : p[IX(i, j - 1)];
+                
+                u[IX(i, j)] -= 0.5f * (pRight - pLeft) / h;
+                v[IX(i, j)] -= 0.5f * (pUp - pDown) / h;
             }
         }
     }
@@ -182,6 +189,25 @@ void FluidSolver::project(std::vector<float>& u, std::vector<float>& v, std::vec
 }
 
 void FluidSolver::step() {
+    // Vorticity confinement for realistic swirls
+    std::vector<float> curl(size, 0.0f);
+    for (int j = 1; j < N - 1; j++) {
+        for (int i = 1; i < N - 1; i++) {
+            curl[IX(i, j)] = (Vy[IX(i + 1, j)] - Vy[IX(i - 1, j)]) - (Vx[IX(i, j + 1)] - Vx[IX(i, j - 1)]);
+        }
+    }
+    for (int j = 2; j < N - 2; j++) {
+        for (int i = 2; i < N - 2; i++) {
+            float dx = std::abs(curl[IX(i, j - 1)]) - std::abs(curl[IX(i, j + 1)]);
+            float dy = std::abs(curl[IX(i + 1, j)]) - std::abs(curl[IX(i - 1, j)]);
+            float len = std::sqrt(dx * dx + dy * dy) + 1e-5f;
+            dx = 0.5f * dx / len;
+            dy = 0.5f * dy / len;
+            Vx[IX(i, j)] += dx * curl[IX(i, j)];
+            Vy[IX(i, j)] += dy * curl[IX(i, j)];
+        }
+    }
+
     std::swap(Vx0, Vx);
     std::swap(Vy0, Vy);
     diffuse(1, Vx, Vx0, visc, dt);

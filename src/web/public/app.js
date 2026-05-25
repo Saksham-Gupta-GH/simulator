@@ -656,23 +656,20 @@ function render() {
             const dg = densityG[i];
             const db = densityB[i];
             
-            // Normalize fluid amount
-            const amtR = Math.min(1.0, dr / 20.0);
-            const amtG = Math.min(1.0, dg / 20.0);
-            const amtB = Math.min(1.0, db / 20.0);
-            
-            const totalDensity = Math.min(1.0, (dr + dg + db) / 20.0);
-            
-            if (totalDensity > 0.001) {
-                // Calculate average color weighted by density
-                const sum = dr + dg + db;
-                const r_fluid = (dr / sum) * 255;
-                const g_fluid = (dg / sum) * 255;
-                const b_fluid = (db / sum) * 255;
+            const maxD = Math.max(dr, dg, db);
+            if (maxD > 0.5) {
+                // Scale color but prevent extreme amplification of noise
+                const scale = 255.0 / Math.max(maxD, 20.0); 
+                const r_fluid = dr * scale;
+                const g_fluid = dg * scale;
+                const b_fluid = db * scale;
                 
-                data[pxIdx] = r_bg + totalDensity * (r_fluid - r_bg);       
-                data[pxIdx + 1] = g_bg + totalDensity * (g_fluid - g_bg);  
-                data[pxIdx + 2] = b_bg + totalDensity * (b_fluid - b_bg); 
+                // Smooth opacity curve
+                const opacity = Math.min(1.0, maxD / 120.0);
+                
+                data[pxIdx] = r_bg + opacity * (r_fluid - r_bg);       
+                data[pxIdx + 1] = g_bg + opacity * (g_fluid - g_bg);  
+                data[pxIdx + 2] = b_bg + opacity * (b_fluid - b_bg); 
                 data[pxIdx + 3] = 255;  
             } else {
                 data[pxIdx] = r_bg;
