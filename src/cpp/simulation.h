@@ -1,105 +1,85 @@
 #ifndef SIMULATION_H
 #define SIMULATION_H
 
+#include "fluid_solver.h"
 #include <vector>
+#include <random>
+
 #include <cstdint>
-#include "car.h"
 
-/**
- * @brief Master Evolution Simulation Manager.
- * Orchestrates track memory, population steps, fitness sorting, and genetic breeding.
- */
+struct Particle {
+    float x, y;
+    float speed;
+};
+
 class Simulation {
-private:
-    int populationSize;
-    int generationCount;
-    
-    // Grid track dimensions (fixed 80 x 60 grid maps)
-    int gridWidth;
-    int gridHeight;
-    float cellSize;
-    std::vector<uint8_t> gridData;
-
-    // Start coordinates for the generation cars
-    float startX;
-    float startY;
-
-    // Genetic algorithm parameters
-    float mutationRate;
-    float mutationAmount;
-
-    // Flat data buffers exposed to JS via zero-copy HEAP pointer maps
-    std::vector<float> carCoordinatesBuffer; // Size: (popSize * 13)
-    std::vector<float> bestBrainWeightsBuffer; // Array containing flat synapses data
-
 public:
-    std::vector<Car> cars;
-    int bestCarIdx;
+    Simulation(int w, int h);
+    ~Simulation() = default;
 
-    /**
-     * @brief Initialize population sizing and allocation.
-     */
-    Simulation(int popSize);
-
-    /**
-     * @brief Steps the physics simulation forward by 1 frame ticks.
-     * Evaluates collisions and updates coordinate blit buffers.
-     */
-    void step();
-
-    /**
-     * @brief Instantly resets and triggers the next genetic generation cycle.
-     */
-    void evolveNextGeneration();
-
-    /**
-     * @brief Clear all active walls and reset generation count to 1.
-     */
-    void reset();
-
-    /**
-     * @brief Triggers manually a massive mutation blast on the entire population.
-     */
-    void triggerSuperMutation();
-
-    // --- High-Performance WebAssembly Memory Interfacing ---
+    // Core execution loop
+    void update(float dt, float viscosity, float wind_speed);
     
-    /**
-     * @brief Exposes the pointer to the flat track grid data.
-     * Javascript can directly write painted walls into this pointer!
-     */
-    uintptr_t getGridPtr();
+    // UI Brush controls
+    void draw_obstacle_brush(int cx, int cy, int radius, bool draw);
+    void reset_simulation();
+    void clear_all_obstacles();
 
-    /**
-     * @brief Exposes the pointer to the contiguous flat coordinate floats buffer.
-     * Buffer layout per car (13 floats total):
-     * [0] x, [1] y, [2] angle, [3] speed, [4] isDead, [5] id, [6..10] sensors, [11] fitness, [12] stepsAlive
-     */
-    uintptr_t getCarCoordinatesPtr();
+    // Preset shapes triggers
+    void load_preset(int preset_id);
+    void set_angle_of_attack(float angle_deg);
 
-    /**
-     * @brief Exposes flat pointer to the best brain's synapses weights.
-     */
-    uintptr_t getBestBrainWeightsPtr();
-    int getBestBrainWeightsSize() const;
+    // Getters for JavaScript zero-copy blitting
+    uintptr_t get_particles_ptr() { return reinterpret_cast<uintptr_t>(flat_particles.data()); }
+    int get_particle_count() const { return particles.size(); }
 
-    // --- Settings and Telemetry Accessors ---
-    int getGenerationCount() const { return generationCount; }
-    int getPopulationSize() const { return populationSize; }
-    int getActiveCarsCount() const;
-    float getMaxFitness() const;
+    uintptr_t get_u_ptr() { return reinterpret_cast<uintptr_t>(solver.get_u_ptr()); }
+    uintptr_t get_v_ptr() { return reinterpret_cast<uintptr_t>(solver.get_v_ptr()); }
+    uintptr_t get_pressure_ptr() { return reinterpret_cast<uintptr_t>(solver.get_pressure_ptr()); }
+    uintptr_t get_density_ptr() { return reinterpret_cast<uintptr_t>(solver.get_density_ptr()); }
+    uintptr_t get_obstacle_ptr() { return reinterpret_cast<uintptr_t>(solver.get_obstacle_ptr()); }
 
-    float getMutationRate() const { return mutationRate; }
-    void setMutationRate(float val) { mutationRate = val; }
+    // Telemetry getters
+    float get_drag_coefficient() const { return drag_coeff; }
+    float get_lift_coefficient() const { return lift_coeff; }
+    float get_reynolds_number() const { return reynolds; }
 
-    float getMutationAmount() const { return mutationAmount; }
-    void setMutationAmount(float val) { mutationAmount = val; }
+private:
+    FluidSolver solver;
+    int width;
+    int height;
 
-    float getStartX() const { return startX; }
-    void setStartX(float val) { startX = val; }
+    // Dynamic Smoke Particle System
+    std::vector<Particle> particles;
+    std::vector<float> flat_particles; // Flattened format [x1, y1, speed1, x2, y2, speed2, ...]
+    
+    std::mt19937 rng;
+    std::uniform_real_distribution<float> dist_y;
+    std::uniform_real_distribution<float> dist_x;
 
-    float getStartY() const { return startY; }
-    void setStartY(float val) { startY = val; }
+    // Shape preset settings
+    int current_preset;
+    float angle_of_attack_deg;
+
+    // Telemetry registers
+    float drag_coeff;
+    float lift_coeff;
+    float reynolds;
+
+    // Helper functions
+    void init_particles();
+    void update_particles(float dt);
+    
+    // Calculates aerodynamic pressure boundary integrals
+    void compute_aerodynamics(float wind_speed);
+
+    // Coordinate rotation math helper
+    void rotate_point(float x, float y, float cx, float cy, float angle_rad, float& rx, float& ry) const;
+
+    // Shape outlines generator
+    void build_preset_airfoil(float length, float camber_thickness, float chord_x, float chord_y, bool is_asymmetric);
+    void build_preset_f1_car(float cx, float cy, float scale);
+    void build_preset_bullet_vs_block(float cx, float cy, bool is_bullet);
 };
 
 #endif // SIMULATION_H

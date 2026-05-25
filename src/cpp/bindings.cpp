@@ -1,35 +1,29 @@
 #include <emscripten/bind.h>
 #include "simulation.h"
+#include <cstdint>
 
 using namespace emscripten;
 
-EMSCRIPTEN_BINDINGS(self_driving_car_simulation_bindings) {
+EMSCRIPTEN_BINDINGS(aerodynamics_simulation) {
     class_<Simulation>("Simulation")
-        .constructor<int>()
+        .constructor<int, int>()
+        .function("update", &Simulation::update)
+        .function("drawObstacleBrush", &Simulation::draw_obstacle_brush)
+        .function("resetSimulation", &Simulation::reset_simulation)
+        .function("clearAllObstacles", &Simulation::clear_all_obstacles)
+        .function("loadPreset", &Simulation::load_preset)
+        .function("setAngleOfAttack", &Simulation::set_angle_of_attack)
         
-        // Simulation steps & controls
-        .function("step", &Simulation::step)
-        .function("evolveNextGeneration", &Simulation::evolveNextGeneration)
-        .function("reset", &Simulation::reset)
-        .function("triggerSuperMutation", &Simulation::triggerSuperMutation)
+        .function("getParticlesPtr", &Simulation::get_particles_ptr)
+        .function("getParticleCount", &Simulation::get_particle_count)
+        .function("getUPtr", &Simulation::get_u_ptr)
+        .function("getVPtr", &Simulation::get_v_ptr)
+        .function("getPressurePtr", &Simulation::get_pressure_ptr)
+        .function("getDensityPtr", &Simulation::get_density_ptr)
+        .function("getObstaclePtr", &Simulation::get_obstacle_ptr)
         
-        // Shared heap pointer lookups (ZERO-COPY memory mapping)
-        .function("getGridPtr", &Simulation::getGridPtr)
-        .function("getCarCoordinatesPtr", &Simulation::getCarCoordinatesPtr)
-        .function("getBestBrainWeightsPtr", &Simulation::getBestBrainWeightsPtr)
-        .function("getBestBrainWeightsSize", &Simulation::getBestBrainWeightsSize)
-        
-        // Telemetry getters
-        .property("generationCount", &Simulation::getGenerationCount)
-        .property("populationSize", &Simulation::getPopulationSize)
-        .property("activeCarsCount", &Simulation::getActiveCarsCount)
-        .property("maxFitness", &Simulation::getMaxFitness)
-        .property("bestCarIdx", &Simulation::bestCarIdx)
-        
-        // Custom environmental variables (sliders)
-        .property("mutationRate", &Simulation::getMutationRate, &Simulation::setMutationRate)
-        .property("mutationAmount", &Simulation::getMutationAmount, &Simulation::setMutationAmount)
-        .property("startX", &Simulation::getStartX, &Simulation::setStartX)
-        .property("startY", &Simulation::getStartY, &Simulation::setStartY)
-        ;
+        // Telemetry
+        .function("getDragCoefficient", &Simulation::get_drag_coefficient)
+        .function("getLiftCoefficient", &Simulation::get_lift_coefficient)
+        .function("getReynoldsNumber", &Simulation::get_reynolds_number);
 }

@@ -7,14 +7,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Source files
 set(SOURCES
+    src/cpp/fluid_solver.cpp
     src/cpp/simulation.cpp
     src/cpp/bindings.cpp
 )
 
 # Header files
 set(HEADERS
-    src/cpp/particle.h
-    src/cpp/spatial_grid.h
+    src/cpp/fluid_solver.h
     src/cpp/simulation.h
 )
 

@@ -1,614 +1,502 @@
-/* ==========================================================================
-   NeuroDrive AI Simulator - Core Frontend Controller (JS/Wasm Interfacing)
-   ========================================================================== */
+// ==========================================================================
+// AeroFlow AI - Wind Tunnel JavaScript Integration Layer (Zero-Copy WebAssembly)
+// ==========================================================================
 
-let Module = null;
 let sim = null;
+let moduleRef = null;
 
-// Core Simulation Canvas
-const canvas = document.getElementById('sim-canvas');
-const ctx = canvas.getContext('2d');
+// Grid configuration matching C++ backend constants
+const gridWidth = 150;
+const gridHeight = 100;
+const gridSize = gridWidth * gridHeight;
+const cellScale = 6; // Scale grid up to fit the 900x600 canvas
 
-// Neural Network Visual Debugger Canvas
-const netCanvas = document.getElementById('network-canvas');
-const netCtx = netCanvas.getContext('2d');
+// UI active status registers
+let activeBrush = 'barrier'; // 'barrier', 'emitter', 'erase'
+let activeVis = 'smoke';      // 'smoke', 'pressure', 'vector'
+let activeSpeedMultiplier = 1;
+let activePreset = 0;
 
-// Grid Dimensions (fixed in C++)
-const gridCols = 80;
-const gridRows = 60;
-const cellSize = 10; // 10px cells => 800x600 canvas
+// Mouse drawing states
+let isDrawing = false;
+let brushRadius = 2;
 
-// Interactive brushes
-let currentBrush = 'road'; // road (erase wall), wall, erase
-let currentPreset = 'oval';
-let mouseIsDown = false;
-let simulationSpeed = 1;   // 1x, 2x, 5x, 10x steps per render frame
+// Real-time efficiency chart history arrays
+const ldHistory = [];
+const maxHistoryLength = 150;
 
-// Dynamic color configurations matching HSL themes
-let colors = {
-    cyan: '#06b6d4',
-    blue: '#3b82f6',
-    purple: '#a855f7',
-    orange: '#f97316',
-    wall: 'rgba(6, 182, 212, 0.15)',
-    trackBg: '#090d16'
-};
-
-// --------------------------------------------------------------------------
-// WebAssembly Hydration & Simulation Initialization
-// --------------------------------------------------------------------------
+// Initialize Emscripten WebAssembly core loader
 createFluidSimModule({
-    locateFile: function(path) {
-        if (path.endsWith('.wasm')) {
-            return 'wasm/' + path; // Explicitly map to static sub-folder
-        }
-        return path;
-    }
-}).then(ModuleInstance => {
-    Module = ModuleInstance;
-    console.log("C++ AI Neural Physics Core Hydrated Successfully!");
-
-    // Instantiate C++ Simulation class with a population of 30 self-driving cars
-    sim = new Module.Simulation(30);
-
-    // Initial starting positions (perfectly placed at center-bottom for oval start)
-    sim.startX = 400;
-    sim.startY = 500;
+    locateFile: (path) => path.endsWith('.wasm') ? 'wasm/' + path : path
+}).then((module) => {
+    moduleRef = module;
     
-    // Bind all slider settings to Wasm memory
-    syncSlidersToWasm();
-
-    // Pre-load default racetrack
-    loadMapPreset('oval');
-
-    // Begin high-performance rendering loop
-    requestAnimationFrame(renderLoop);
+    // Allocate the unified Simulation engine in C++ heap
+    sim = new module.Simulation(gridWidth, gridHeight);
+    
+    console.log("AeroFlow AI C++ WebAssembly Physics Engine loaded successfully!");
+    
+    // Initialize user controls, presets, and start the render loops
+    initControls();
+    startSimulationLoop();
 });
 
-// Sync Web UI parameters directly to C++ classes
-function syncSlidersToWasm() {
-    if (!sim) return;
+// Setup DOM UI selectors and interaction triggers
+function initControls() {
+    // 1. Brush buttons
+    const brushButtons = document.querySelectorAll('.brush-btn[data-brush]');
+    brushButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            brushButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            activeBrush = btn.getAttribute('data-brush');
+        });
+    });
+
+    // 2. Vis Layer buttons
+    const visButtons = document.querySelectorAll('.brush-btn[data-vis]');
+    visButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            visButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            activeVis = btn.getAttribute('data-vis');
+        });
+    });
+
+    // 3. Preset selectors
+    const presetButtons = document.querySelectorAll('.map-btn');
+    const aoaContainer = document.getElementById('aoa-container');
+    const aoaSlider = document.getElementById('param-aoa');
+    const aoaValueLabel = document.getElementById('val-aoa');
+
+    presetButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            presetButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            
+            activePreset = parseInt(btn.getAttribute('data-preset'));
+            sim.loadPreset(activePreset);
+            
+            // Show/Hide Angle of Attack tuning panel based on loaded shapes
+            if (activePreset !== 0) {
+                aoaContainer.style.display = 'block';
+                // Reset angle slider when switching presets
+                aoaSlider.value = 0;
+                aoaValueLabel.innerText = '0°';
+                sim.setAngleOfAttack(0);
+            } else {
+                aoaContainer.style.display = 'none';
+            }
+
+            // Flush telemetry graphs
+            ldHistory.length = 0;
+        });
+    });
+
+    // 4. Angle of Attack Slider
+    aoaSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value);
+        aoaValueLabel.innerText = (val > 0 ? '+' : '') + val + '°';
+        sim.setAngleOfAttack(val);
+    });
+
+    // 5. Physics Step Multiplier (Speed)
+    const speedButtons = document.querySelectorAll('.speed-btn');
+    const speedValLabel = document.getElementById('val-speed');
+    speedButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            speedButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            activeSpeedMultiplier = parseInt(btn.getAttribute('data-speed'));
+            speedValLabel.innerText = activeSpeedMultiplier + 'x Hyperspeed';
+        });
+    });
+
+    // 6. Wind Speed Slider
+    const windSlider = document.getElementById('param-wind-speed');
+    const windLabel = document.getElementById('val-wind-speed');
+    windSlider.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        windLabel.innerText = val.toFixed(1) + ' m/s';
+    });
+
+    // 7. Viscosity Slider
+    const viscositySlider = document.getElementById('param-viscosity');
+    const viscosityLabel = document.getElementById('val-viscosity');
+    viscositySlider.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        viscosityLabel.innerText = val.toFixed(4);
+    });
+
+    // 8. Trigger Buttons
+    document.getElementById('btn-clear-barriers').addEventListener('click', () => {
+        sim.clearAllObstacles();
+        presetButtons.forEach(b => b.classList.remove('active'));
+        document.getElementById('preset-blank').classList.add('active');
+        aoaContainer.style.display = 'none';
+        activePreset = 0;
+        ldHistory.length = 0;
+    });
+
+    document.getElementById('btn-reset-fluid').addEventListener('click', () => {
+        sim.resetSimulation();
+        presetButtons.forEach(b => b.classList.remove('active'));
+        document.getElementById('preset-blank').classList.add('active');
+        aoaContainer.style.display = 'none';
+        activePreset = 0;
+        ldHistory.length = 0;
+    });
+
+    // 9. Canvas drawing events setup
+    const canvas = document.getElementById('sim-canvas');
+    canvas.addEventListener('mousedown', (e) => {
+        isDrawing = true;
+        handleDraw(e);
+    });
     
-    const mutationRate = parseFloat(document.getElementById('param-mutation-rate').value);
-    const mutationAmount = parseFloat(document.getElementById('param-mutation-amount').value);
+    canvas.addEventListener('mousemove', (e) => {
+        if (isDrawing) {
+            handleDraw(e);
+        }
+    });
 
-    sim.mutationRate = mutationRate;
-    sim.mutationAmount = mutationAmount;
+    window.addEventListener('mouseup', () => {
+        isDrawing = false;
+    });
 
-    document.getElementById('val-mutation-rate').textContent = `${Math.round(mutationRate * 100)}%`;
-    document.getElementById('val-mutation-amount').textContent = mutationAmount.toFixed(2);
+    // Support mobile touch gestures
+    canvas.addEventListener('touchstart', (e) => {
+        isDrawing = true;
+        handleDraw(e.touches[0]);
+        e.preventDefault();
+    });
+    
+    canvas.addEventListener('touchmove', (e) => {
+        if (isDrawing) {
+            handleDraw(e.touches[0]);
+            e.preventDefault();
+        }
+    });
+
+    canvas.addEventListener('touchend', () => {
+        isDrawing = false;
+    });
 }
 
-// --------------------------------------------------------------------------
-// Racetrack Presets (Grid Writers)
-// --------------------------------------------------------------------------
-function loadMapPreset(preset) {
-    if (!sim) return;
+// Coordinates brush coordinates translation onto C++ simulation grid
+function handleDraw(e) {
+    const canvas = document.getElementById('sim-canvas');
+    const rect = canvas.getBoundingClientRect();
+    
+    // Calculate click coordinates relative to screen dimensions
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    const clickX = (e.clientX - rect.left) * scaleX;
+    const clickY = (e.clientY - rect.top) * scaleY;
+    
+    // Scale down coordinates to fit 150x100 physics coordinates
+    const gridX = Math.floor(clickX / cellScale);
+    const gridY = Math.floor(clickY / cellScale);
 
-    const gridPtr = sim.getGridPtr();
-    // Direct memory HEAP view mapping C++ vector: 0% data copy overhead!
-    const grid = new Uint8Array(Module.HEAPU8.buffer, gridPtr, gridCols * gridRows);
-    grid.fill(0); // Wipe track
-
-    // Outer bounding borders (always solid boundaries)
-    for (let x = 0; x < gridCols; ++x) {
-        grid[0 * gridCols + x] = 1;
-        grid[(gridRows - 1) * gridCols + x] = 1;
-    }
-    for (let y = 0; y < gridRows; ++y) {
-        grid[y * gridCols + 0] = 1;
-        grid[y * gridCols + (gridCols - 1)] = 1;
-    }
-
-    if (preset === 'oval') {
-        // --- Oval Grand Prix Circuit Preset ---
-        sim.startX = 400; sim.startY = 500; // bottom center
-        
-        // Solid center pill-shaped barrier to force cars to drive in a loop
-        for (let y = 16; y <= 44; ++y) {
-            for (let x = 16; x <= 64; ++x) {
-                const dx = x - 40;
-                const dy = y - 30;
-                // Oval mathematical formula mapping inner obstacle
-                if ((dx * dx) / 440 + (dy * dy) / 120 <= 1.0) {
-                    grid[y * gridCols + x] = 1;
+    if (gridX >= 0 && gridX < gridWidth && gridY >= 0 && gridY < gridHeight) {
+        if (activeBrush === 'barrier') {
+            sim.drawObstacleBrush(gridX, gridY, brushRadius, true);
+        } else if (activeBrush === 'erase') {
+            sim.drawObstacleBrush(gridX, gridY, brushRadius, false);
+        } else if (activeBrush === 'emitter') {
+            // Click to inject custom density dyes (drawn in high columns)
+            for (intOffset = -2; intOffset <= 2; intOffset++) {
+                const cy = gridY + intOffset;
+                if (cy >= 0 && cy < gridHeight) {
+                    // We interact with density fields by drawing them directly
+                    // To do this, JS triggers density adds via solver pointer
+                    const densityPtr = sim.getDensityPtr();
+                    const HEAPF32 = moduleRef.HEAPF32;
+                    const idx = gridX + cy * gridWidth;
+                    HEAPF32[densityPtr / 4 + idx] = 4.0; // feed intense smoke dye
                 }
             }
         }
-    } 
-    else if (preset === 'hairpin') {
-        // --- Double Hairpin Twist Preset ---
-        sim.startX = 90; sim.startY = 120; // top left start
-        
-        // Horizontal barriers creating snake-like hairpin turns
-        // Segment 1 (left to right)
-        for (let x = 0; x < 62; ++x) {
-            grid[18 * gridCols + x] = 1;
-        }
-        // Segment 2 (right to left)
-        for (let x = 18; x < gridCols; ++x) {
-            grid[36 * gridCols + x] = 1;
-        }
-    } 
-    else if (preset === 'obstacle') {
-        // --- AI Obstacle Maze Preset ---
-        sim.startX = 400; sim.startY = 520;
-        
-        // Scattered rigid pillars/walls testing AI edge avoidance sensors
-        const pillars = [
-            {cx: 40, cy: 30, r: 8},  // Giant center pillar
-            {cx: 20, cy: 15, r: 5},  // Top-left
-            {cx: 60, cy: 15, r: 5},  // Top-right
-            {cx: 20, cy: 45, r: 5},  // Bottom-left
-            {cx: 60, cy: 45, r: 5},  // Bottom-right
-            {cx: 40, cy: 10, r: 3},  // Center top
-            {cx: 40, cy: 50, r: 3}   // Center bottom
-        ];
+    }
+}
 
-        for (let p of pillars) {
-            for (let y = p.cy - p.r; y <= p.cy + p.r; ++y) {
-                for (let x = p.cx - p.r; x <= p.cx + p.r; ++x) {
-                    const dx = x - p.cx;
-                    const dy = y - p.cy;
-                    if (dx*dx + dy*dy <= p.r * p.r) {
-                        grid[y * gridCols + x] = 1;
+// Main physics execution and graphic rendering loops
+function startSimulationLoop() {
+    const canvas = document.getElementById('sim-canvas');
+    const ctx = canvas.getContext('2d');
+    
+    const chartCanvas = document.getElementById('network-canvas');
+    const chartCtx = chartCanvas.getContext('2d');
+
+    // Setup an offscreen buffer for lightning-fast pressure heatmap renders
+    const offscreenCanvas = document.createElement('canvas');
+    offscreenCanvas.width = gridWidth;
+    offscreenCanvas.height = gridHeight;
+    const offscreenCtx = offscreenCanvas.getContext('2d');
+    const offscreenImgData = offscreenCtx.createImageData(gridWidth, gridHeight);
+
+    // Active DOM telemetry references
+    const dragLabel = document.getElementById('stat-drag');
+    const liftLabel = document.getElementById('stat-lift');
+    const reynoldsLabel = document.getElementById('stat-reynolds');
+
+    const dt = 0.05f; // Timestep step
+
+    function frame() {
+        // Read current slider states to feed into C++ steps
+        const windSpeed = parseFloat(document.getElementById('param-wind-speed').value);
+        const viscosity = parseFloat(document.getElementById('param-viscosity').value);
+
+        // 1. Advance C++ physics simulation by active speed multiplier
+        for (let s = 0; s < activeSpeedMultiplier; ++s) {
+            sim.update(dt, viscosity, windSpeed);
+        }
+
+        // 2. Perform zero-copy pointer wraps
+        const HEAPU8 = moduleRef.HEAPU8;
+        const HEAPF32 = moduleRef.HEAPF32;
+
+        const uPtr = sim.getUPtr();
+        const vPtr = sim.getVPtr();
+        const pPtr = sim.getPressurePtr();
+        const dPtr = sim.getDensityPtr();
+        const obsPtr = sim.getObstaclePtr();
+        const partPtr = sim.getParticlesPtr();
+        const partCount = sim.getParticleCount();
+
+        // Directly reference subarrays on WebAssembly memory heap without copying data!
+        const obstacles = new Uint8Array(HEAPU8.buffer, obsPtr, gridSize);
+        const pressures = new Float32Array(HEAPF32.buffer, pPtr, gridSize);
+        const densities = new Float32Array(HEAPF32.buffer, dPtr, gridSize);
+        const velocitiesU = new Float32Array(HEAPF32.buffer, uPtr, gridSize);
+        const velocitiesV = new Float32Array(HEAPF32.buffer, vPtr, gridSize);
+        const particles = new Float32Array(HEAPF32.buffer, partPtr, partCount * 3);
+
+        // 3. Clear canvas and draw visualizations
+        ctx.fillStyle = '#080b11';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Render backgrounds layers depending on active vis selection
+        if (activeVis === 'pressure') {
+            // PRESSURE HEATMAP: Scale pressure values to glowing color arrays
+            const data = offscreenImgData.data;
+            for (let i = 0; i < gridSize; ++i) {
+                if (obstacles[i] === 1) {
+                    // Obstacles rendered as dark charcoal
+                    data[i * 4] = 13;     // R
+                    data[i * 4 + 1] = 17; // G
+                    data[i * 4 + 2] = 25; // B
+                    data[i * 4 + 3] = 255;
+                    continue;
+                }
+                
+                // Normalizing pressures around baseline
+                const pVal = pressures[i] * 12.0; 
+                
+                let r = 0, g = 0, b = 0;
+                if (pVal > 0) {
+                    // High pressure -> glowing orange/red
+                    r = Math.min(255, Math.floor(pVal * 190 + 20));
+                    g = Math.min(255, Math.floor(pVal * 60));
+                    b = Math.min(255, Math.floor(pVal * 10));
+                } else {
+                    // Low pressure (vacuum suction) -> deep indigo/violet
+                    const nVal = Math.abs(pVal);
+                    r = Math.min(255, Math.floor(nVal * 60));
+                    g = Math.min(255, Math.floor(nVal * 30));
+                    b = Math.min(255, Math.floor(nVal * 220 + 40));
+                }
+
+                // Add faint baseline ambient cyan to normal channels
+                data[i * 4] = Math.max(r, 6);
+                data[i * 4 + 1] = Math.max(g, 15);
+                data[i * 4 + 2] = Math.max(b, 25);
+                data[i * 4 + 3] = 255;
+            }
+            
+            // Push offscreen pixel buffer onto offscreen canvas
+            offscreenCtx.putImageData(offscreenImgData, 0, 0);
+            
+            // Scale the offscreen canvas up onto the 900x600 canvas using GPU bilinear interpolation
+            ctx.imageSmoothingEnabled = true;
+            ctx.drawImage(offscreenCanvas, 0, 0, canvas.width, canvas.height);
+            
+        } else if (activeVis === 'vector') {
+            // VELOCITY VECTORS: Draw simple velocity direction arrows
+            ctx.strokeStyle = 'rgba(6, 182, 212, 0.22)';
+            ctx.lineWidth = 1;
+            
+            const stride = 5; // Draw vectors at every 5th cell to prevent visual overcrowding
+            for (let y = 2; y < gridHeight - 2; y += stride) {
+                for (let x = 2; x < gridWidth - 2; x += stride) {
+                    const idx = x + y * gridWidth;
+                    if (obstacles[idx] === 1) continue;
+
+                    const uVal = velocitiesU[idx] * 8.0;
+                    const vVal = velocitiesV[idx] * 8.0;
+                    const speed = Math.sqrt(uVal * uVal + vVal * vVal);
+
+                    const startX = x * cellScale + cellScale / 2;
+                    const startY = y * cellScale + cellScale / 2;
+
+                    ctx.beginPath();
+                    ctx.moveTo(startX, startY);
+                    ctx.lineTo(startX + uVal * cellScale, startY + vVal * cellScale);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // Render flowing smoke streamlines (Particles)
+        if (activeVis === 'smoke') {
+            // Draw 8,000 glowing vector smoke particles
+            for (let i = 0; i < partCount; ++i) {
+                const px = particles[i * 3] * cellScale;
+                const py = particles[i * 3 + 1] * cellScale;
+                const speed = particles[i * 3 + 2] * 2.8;
+
+                // Colorize streamlines dynamically based on speed (Bernoulli coloring!)
+                let color = 'rgba(6, 182, 212, 0.42)'; // cyan default (standard speed)
+                if (speed > 4.5) {
+                    color = 'rgba(168, 85, 247, 0.65)'; // Violet/Purple (accelerated flow / lift)
+                } else if (speed < 0.6) {
+                    color = 'rgba(249, 115, 22, 0.40)'; // Amber/Orange (wake turbulence stagnation)
+                }
+
+                ctx.fillStyle = color;
+                ctx.fillRect(px, py, 1.5, 1.5);
+            }
+        } else {
+            // Draw faint smoke streamlines on top of pressure or vector modes to preserve reference flow
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+            for (let i = 0; i < partCount; i += 2) {
+                const px = particles[i * 3] * cellScale;
+                const py = particles[i * 3 + 1] * cellScale;
+                ctx.fillRect(px, py, 1.0, 1.0);
+            }
+        }
+
+        // 4. Paint rigid solid obstacles on top (Paint barriers)
+        ctx.fillStyle = '#0d1119';
+        ctx.strokeStyle = '#06b6d4';
+        ctx.lineWidth = 1.5;
+
+        for (let y = 1; y < gridHeight - 1; ++y) {
+            for (let x = 1; x < gridWidth - 1; ++x) {
+                const idx = x + y * gridWidth;
+                if (obstacles[idx] === 1) {
+                    const startX = x * cellScale;
+                    const startY = y * cellScale;
+                    
+                    ctx.fillRect(startX, startY, cellScale, cellScale);
+                    
+                    // Draw outer border outlines for neighboring fluid faces
+                    if (obstacles[idx - 1] === 0 || obstacles[idx + 1] === 0 || 
+                        obstacles[idx - gridWidth] === 0 || obstacles[idx + gridWidth] === 0) {
+                        ctx.strokeRect(startX, startY, cellScale, cellScale);
                     }
                 }
             }
         }
+
+        // 5. Update Telemetry displays
+        const dragVal = sim.getDragCoefficient();
+        const liftVal = sim.getLiftCoefficient();
+        const reynoldsVal = Math.round(sim.getReynoldsNumber());
+
+        dragLabel.innerText = dragVal.toFixed(3);
+        liftLabel.innerText = liftVal.toFixed(3);
+        reynoldsLabel.innerText = reynoldsVal.toLocaleString();
+
+        // Style telemetry labels based on active aero states (F1 downforce warning)
+        if (liftVal < -0.05) {
+            liftLabel.className = "stat-val text-orange";
+            liftLabel.innerText = liftVal.toFixed(3) + " DF"; // Downforce
+        } else if (liftVal > 0.05) {
+            liftLabel.className = "stat-val text-cyan";
+        } else {
+            liftLabel.className = "stat-val";
+        }
+
+        // Calculate and push active Lift-to-Drag ratio to history array
+        const ldRatio = (Math.abs(dragVal) > 0.002) ? (liftVal / dragVal) : 0.0;
+        ldHistory.push(ldRatio);
+        if (ldHistory.length > maxHistoryLength) {
+            ldHistory.shift();
+        }
+
+        // 6. Render real-time Efficiency Line Chart
+        renderEfficiencyChart(chartCtx, chartCanvas);
+
+        requestAnimationFrame(frame);
     }
-    
-    // Reboot simulation so all cars start at new starting coordinates
-    sim.reset();
+
+    requestAnimationFrame(frame);
 }
 
-// --------------------------------------------------------------------------
-// Core step & Render Frame loop (60 FPS)
-// --------------------------------------------------------------------------
-function renderLoop(timeNow) {
-    if (!sim) return;
-
-    // Perform multiple simulation ticks per frame to enable speed multipliers!
-    for (let i = 0; i < simulationSpeed; ++i) {
-        sim.step();
-    }
-
-    // Retrieve active telemetry data
-    const gen = sim.generationCount;
-    const popSize = sim.populationSize;
-    const active = sim.activeCarsCount;
-    const maxFit = sim.maxFitness;
-    const bestCarIdx = sim.bestCarIdx;
-
-    // Update telemetry badges
-    document.getElementById('stat-gen').textContent = gen;
-    document.getElementById('stat-alive').textContent = `${active} / ${popSize}`;
-    document.getElementById('stat-fitness').textContent = maxFit.toFixed(1);
-
-    // Map contiguous coordinate floats: 13 properties per car
-    const ptr = sim.getCarCoordinatesPtr();
-    const carData = new Float32Array(Module.HEAPF32.buffer, ptr, popSize * 13);
-
-    // Map wall grid buffer
-    const gridPtr = sim.getGridPtr();
-    const gridData = new Uint8Array(Module.HEAPU8.buffer, gridPtr, gridCols * gridRows);
-
-    // Render step
-    drawRacetrack(gridData);
-    drawSwarm(carData, popSize, bestCarIdx);
-
-    // Render Brain
-    drawNeuralNetwork(carData, bestCarIdx);
-
-    requestAnimationFrame(renderLoop);
-}
-
-// --------------------------------------------------------------------------
-// Canvas Drawing Routines (Tron Vector Aesthetic)
-// --------------------------------------------------------------------------
-function drawRacetrack(grid) {
-    ctx.fillStyle = '#030712';
+// Draw the beautiful scrolling line graph
+function renderEfficiencyChart(ctx, canvas) {
+    ctx.fillStyle = '#04070d';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Draw Obsidian grid guidelines
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.007)';
+    // Draw grid references lines
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
     ctx.lineWidth = 1;
-    for (let col = 0; col < gridCols; ++col) {
-        ctx.beginPath();
-        ctx.moveTo(col * cellSize, 0);
-        ctx.lineTo(col * cellSize, canvas.height);
-        ctx.stroke();
+    
+    // Baseline zero line
+    const zeroY = canvas.height / 2;
+    ctx.beginPath();
+    ctx.moveTo(0, zeroY);
+    ctx.lineTo(canvas.width, zeroY);
+    ctx.stroke();
+
+    // High efficiency positive baseline line
+    ctx.strokeStyle = 'rgba(6, 182, 212, 0.06)';
+    ctx.beginPath();
+    ctx.moveTo(0, zeroY - 40);
+    ctx.lineTo(canvas.width, zeroY - 40);
+    ctx.moveTo(0, zeroY + 40);
+    ctx.lineTo(canvas.width, zeroY + 40);
+    ctx.stroke();
+
+    if (ldHistory.length < 2) {
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '10px "Share Tech Mono"';
+        ctx.fillText("WAITING FOR COMPONENT TELEMETRY...", canvas.width / 2 - 100, zeroY + 4);
+        return;
     }
-    for (let row = 0; row < gridRows; ++row) {
-        ctx.beginPath();
-        ctx.moveTo(0, row * cellSize);
-        ctx.lineTo(canvas.width, row * cellSize);
-        ctx.stroke();
+
+    // Draw historical line plot
+    ctx.strokeStyle = 'rgba(16, 185, 129, 0.85)'; // Emerald line
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+
+    const stepX = canvas.width / (maxHistoryLength - 1);
+    
+    // Find absolute max in history to scale graph cleanly
+    let maxVal = 0.5;
+    for (let i = 0; i < ldHistory.length; ++i) {
+        maxVal = Math.max(maxVal, Math.abs(ldHistory[i]));
     }
+    
+    // Smooth scaling envelope
+    const scaleY = (canvas.height / 2 - 12) / maxVal;
 
-    // Draw rigid obstacles (walls) with glowing borders
-    ctx.fillStyle = '#0f172a';
-    ctx.strokeStyle = 'rgba(6, 182, 212, 0.07)';
-    ctx.lineWidth = 1;
-
-    for (let y = 0; y < gridRows; ++y) {
-        for (let x = 0; x < gridCols; ++x) {
-            if (grid[y * gridCols + x] === 1) {
-                // Fill cell box
-                ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
-                ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
-            }
-        }
-    }
-}
-
-function drawSwarm(data, count, bestIdx) {
-    for (let i = 0; i < count; ++i) {
-        const offset = i * 13;
-        const px = data[offset + 0];
-        const py = data[offset + 1];
-        const angle = data[offset + 2];
-        const speed = data[offset + 3];
-        const isDead = data[offset + 4] === 1.0;
-        
-        if (isDead) continue; // Skip rendering crashed cars for cleaner aesthetics
-
-        const isLeader = (i === bestIdx);
-
-        ctx.save();
-        ctx.translate(px, py);
-        ctx.rotate(angle);
-
-        // Vector drawing sleek rocket-car glider shapes
-        ctx.beginPath();
-        ctx.moveTo(8, 0);       // Nose
-        ctx.lineTo(-6, -4.5);   // Left tail wing
-        ctx.lineTo(-4, 0);      // Engine nozzle
-        ctx.lineTo(-6, 4.5);    // Right tail wing
-        ctx.closePath();
-
-        if (isLeader) {
-            // Draw leader in glowing cyan with bright borders
-            ctx.fillStyle = 'rgba(6, 182, 212, 0.9)';
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 1.5;
-            ctx.shadowBlur = 8;
-            ctx.shadowColor = '#06b6d4';
+    for (let i = 0; i < ldHistory.length; ++i) {
+        const x = i * stepX;
+        const y = zeroY - ldHistory[i] * scaleY;
+        if (i === 0) {
+            ctx.moveTo(x, y);
         } else {
-            // Swarm rendered in transparent neon purple ghosts
-            ctx.fillStyle = 'rgba(168, 85, 247, 0.3)';
-            ctx.strokeStyle = 'rgba(168, 85, 247, 0.6)';
-            ctx.lineWidth = 1;
-            ctx.shadowBlur = 0;
-        }
-
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
-
-        // 4. Render Laser beams for the leading car! (High-end HUD feedback)
-        if (isLeader) {
-            ctx.lineWidth = 1;
-            const sensorAngles = [ -0.8, -0.4, 0.0, 0.4, 0.8 ];
-            const maxRayRange = 135.0;
-
-            for (let s = 0; s < 5; ++s) {
-                const sDist = data[offset + 6 + s]; // Proximity factor: 0.0 to 1.0
-                const rayAngle = angle + sensorAngles[s];
-                const endX = px + Math.cos(rayAngle) * sDist * maxRayRange;
-                const endY = py + Math.sin(rayAngle) * sDist * maxRayRange;
-
-                // Color fades to red when close to walls
-                if (sDist < 0.3) {
-                    ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)'; // red laser
-                } else if (sDist < 0.6) {
-                    ctx.strokeStyle = 'rgba(234, 179, 8, 0.3)';  // yellow laser
-                } else {
-                    ctx.strokeStyle = 'rgba(6, 182, 212, 0.15)';  // cyan faint
-                }
-
-                ctx.beginPath();
-                ctx.moveTo(px, py);
-                ctx.lineTo(endX, endY);
-                ctx.stroke();
-
-                // Faint target hit dot
-                if (sDist < 0.98) {
-                    ctx.fillStyle = ctx.strokeStyle;
-                    ctx.beginPath();
-                    ctx.arc(endX, endY, 2.5, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-            }
+            ctx.lineTo(x, y);
         }
     }
+    ctx.stroke();
+
+    // Render current L/D value label on graph
+    const latestVal = ldHistory[ldHistory.length - 1];
+    ctx.fillStyle = latestVal >= 0.01 ? '#10b981' : (latestVal <= -0.01 ? '#f97316' : '#94a3b8');
+    ctx.font = 'bold 12px "Share Tech Mono"';
+    ctx.fillText("L/D RATIO: " + (latestVal >= 0 ? '+' : '') + latestVal.toFixed(2), 15, 20);
 }
-
-// --------------------------------------------------------------------------
-// Real-time Neural Network Synapse Visualizer
-// --------------------------------------------------------------------------
-function drawNeuralNetwork(carData, bestIdx) {
-    netCtx.clearRect(0, 0, netCanvas.width, netCanvas.height);
-
-    if (bestIdx < 0) return;
-
-    // Flat read best brain weights
-    const weightsPtr = sim.getBestBrainWeightsPtr();
-    const weightsSize = sim.getBestBrainWeightsSize();
-    if (weightsSize === 0) return;
-
-    const weights = new Float32Array(Module.HEAPF32.buffer, weightsPtr, weightsSize);
-
-    // Node Layout dimensions
-    // Layer 0: 5 Inputs, Layer 1: 6 Hidden, Layer 2: 2 Outputs
-    const nodeX = [40, 200, 360];
-    const nodeY = [
-        [30, 75, 120, 165, 210],     // 5 inputs
-        [20, 60, 100, 140, 180, 220], // 6 hidden nodes
-        [75, 165]                     // 2 outputs (Steer, Gas)
-    ];
-
-    // Grab the best car's current active sensor distances and updates
-    const offset = bestIdx * 13;
-    const sensors = [];
-    for (let s = 0; s < 5; ++s) {
-        sensors.push(carData[offset + 6 + s]);
-    }
-
-    // 1. Draw Synapses (Lines) first so circles draw on top
-    // Synapse Weights mapping indices:
-    // Layer 0 Weights (Input i to Hidden j): weights[i * 6 + j] (0..29)
-    // Layer 0 Biases: weights[30..35]
-    // Layer 1 Weights (Hidden j to Output k): weights[36 + j * 2 + k] (36..47)
-    // Layer 1 Biases: weights[48..49]
-
-    netCtx.lineWidth = 1;
-
-    // Layer 0 Synapses: Input -> Hidden
-    for (let i = 0; i < 5; ++i) {
-        for (let j = 0; j < 6; ++j) {
-            const w = weights[i * 6 + j];
-            const weightStrength = Math.abs(w);
-            
-            // Faint colored connections: Cyan for positive weights, Red for negative weights
-            if (w > 0.0) {
-                netCtx.strokeStyle = `rgba(6, 182, 212, ${weightStrength * 0.15})`;
-            } else {
-                netCtx.strokeStyle = `rgba(239, 68, 68, ${weightStrength * 0.12})`;
-            }
-            
-            netCtx.lineWidth = weightStrength * 1.5;
-            netCtx.beginPath();
-            netCtx.moveTo(nodeX[0], nodeY[0][i]);
-            netCtx.lineTo(nodeX[1], nodeY[1][j]);
-            netCtx.stroke();
-        }
-    }
-
-    // Layer 1 Synapses: Hidden -> Output
-    for (let j = 0; j < 6; ++j) {
-        for (let k = 0; k < 2; ++k) {
-            const w = weights[36 + j * 2 + k];
-            const weightStrength = Math.abs(w);
-
-            if (w > 0.0) {
-                netCtx.strokeStyle = `rgba(168, 85, 247, ${weightStrength * 0.18})`;
-            } else {
-                netCtx.strokeStyle = `rgba(239, 68, 68, ${weightStrength * 0.12})`;
-            }
-
-            netCtx.lineWidth = weightStrength * 1.5;
-            netCtx.beginPath();
-            netCtx.moveTo(nodeX[1], nodeY[1][j]);
-            netCtx.lineTo(nodeX[2], nodeY[2][k]);
-            netCtx.stroke();
-        }
-    }
-
-    // 2. Draw Neuron Nodes (Circles)
-    const nodeRadius = 9;
-
-    // Draw Input Nodes (Sensors)
-    for (let i = 0; i < 5; ++i) {
-        const val = sensors[i]; // Proximity factor: 0.0 (wall close) to 1.0 (clear)
-        netCtx.beginPath();
-        netCtx.arc(nodeX[0], nodeY[0][i], nodeRadius, 0, Math.PI * 2);
-
-        // Turn red/warning glow when wall is close!
-        if (val < 0.4) {
-            netCtx.fillStyle = 'rgba(239, 68, 68, 0.9)'; // warning close
-            netCtx.strokeStyle = '#ffffff';
-            netCtx.lineWidth = 1.5;
-            netCtx.shadowBlur = 6;
-            netCtx.shadowColor = 'rgba(239, 68, 68, 0.8)';
-        } else {
-            netCtx.fillStyle = '#0f172a';
-            netCtx.strokeStyle = 'rgba(6, 182, 212, 0.6)';
-            netCtx.lineWidth = 1;
-            netCtx.shadowBlur = 0;
-        }
-        netCtx.fill();
-        netCtx.stroke();
-    }
-
-    // Draw Hidden Nodes (simply filled/unfilled nodes)
-    netCtx.shadowBlur = 0;
-    netCtx.fillStyle = '#0f172a';
-    netCtx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-    netCtx.lineWidth = 1;
-    for (let j = 0; j < 6; ++j) {
-        netCtx.beginPath();
-        netCtx.arc(nodeX[1], nodeY[1][j], nodeRadius, 0, Math.PI * 2);
-        netCtx.fill();
-        netCtx.stroke();
-    }
-
-    // Draw Output Nodes: Steering [0] and Gas [1]
-    const currentAngle = carData[offset + 2];
-    const currentSpeed = carData[offset + 3];
-
-    // Node 0: Steering indicator
-    netCtx.beginPath();
-    netCtx.arc(nodeX[2], nodeY[2][0], nodeRadius, 0, Math.PI*2);
-    netCtx.fillStyle = '#0f172a';
-    netCtx.strokeStyle = 'rgba(168, 85, 247, 0.6)';
-    netCtx.fill();
-    netCtx.stroke();
-
-    // Node 1: Speed / Gas indicator
-    netCtx.beginPath();
-    netCtx.arc(nodeX[2], nodeY[2][1], nodeRadius, 0, Math.PI*2);
-    if (currentSpeed > 1.5) {
-        netCtx.fillStyle = 'rgba(16, 185, 129, 0.7)'; // moving fast green
-        netCtx.strokeStyle = '#ffffff';
-    } else {
-        netCtx.fillStyle = '#0f172a';
-        netCtx.strokeStyle = 'rgba(168, 85, 247, 0.6)';
-    }
-    netCtx.fill();
-    netCtx.stroke();
-}
-
-// --------------------------------------------------------------------------
-// Interactive Track Painting & Canvas Mouse Listeners
-// --------------------------------------------------------------------------
-function getMouseGridPos(e) {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-
-    const mouseX = (e.clientX - rect.left) * scaleX;
-    const mouseY = (e.clientY - rect.top) * scaleY;
-
-    return {
-        cx: Math.floor(mouseX / cellSize),
-        cy: Math.floor(mouseY / cellSize)
-    };
-}
-
-function handleDrawing(e) {
-    if (!sim || !mouseIsDown) return;
-
-    const pos = getMouseGridPos(e);
-    if (pos.cx <= 0 || pos.cx >= gridCols - 1 || pos.cy <= 0 || pos.cy >= gridRows - 1) return;
-
-    const gridPtr = sim.getGridPtr();
-    const grid = new Uint8Array(Module.HEAPU8.buffer, gridPtr, gridCols * gridRows);
-
-    // Paint a circular brush radius of 2 grid cells (20px width) for easier drawing!
-    const brushRadius = currentBrush === 'wall' ? 1 : 1; // standard nice thickness
-
-    for (let dy = -brushRadius; dy <= brushRadius; ++dy) {
-        for (let dx = -brushRadius; dx <= brushRadius; ++dx) {
-            const ny = pos.cy + dy;
-            const nx = pos.cx + dx;
-            if (nx <= 0 || nx >= gridCols - 1 || ny <= 0 || ny >= gridRows - 1) continue;
-
-            const gridIdx = ny * gridCols + nx;
-            if (currentBrush === 'wall') {
-                grid[gridIdx] = 1; // Solid wall
-            } else if (currentBrush === 'road') {
-                grid[gridIdx] = 0; // Erase wall to create open road
-            } else if (currentBrush === 'erase') {
-                grid[gridIdx] = 0;
-            }
-        }
-    }
-}
-
-canvas.addEventListener('mousedown', e => {
-    mouseIsDown = true;
-    handleDrawing(e);
-});
-
-window.addEventListener('mousemove', e => {
-    handleDrawing(e);
-});
-
-window.addEventListener('mouseup', () => {
-    mouseIsDown = false;
-});
-
-// Touch controls mapping
-canvas.addEventListener('touchstart', e => {
-    if (e.touches.length === 0) return;
-    mouseIsDown = true;
-    handleDrawing(e.touches[0]);
-    e.preventDefault();
-}, { passive: false });
-
-canvas.addEventListener('touchmove', e => {
-    if (!mouseIsDown || e.touches.length === 0) return;
-    handleDrawing(e.touches[0]);
-    e.preventDefault();
-}, { passive: false });
-
-canvas.addEventListener('touchend', () => {
-    mouseIsDown = false;
-});
-
-// --------------------------------------------------------------------------
-// UI Listeners & Telemetry Triggers
-// --------------------------------------------------------------------------
-
-// Switch brushes active classes
-document.querySelectorAll('.brush-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.brush-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        currentBrush = btn.dataset.brush;
-    });
-});
-
-// Switch map presets active classes
-document.querySelectorAll('.map-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.map-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        currentPreset = btn.id.replace('map-', '');
-        loadMapPreset(currentPreset);
-    });
-});
-
-// Switch simulation speeds
-document.querySelectorAll('.speed-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        simulationSpeed = parseInt(btn.dataset.speed);
-        
-        let multiplierText = `${simulationSpeed}x Speed`;
-        if (simulationSpeed === 1) multiplierText = '1x Normal';
-        document.getElementById('val-speed').textContent = multiplierText;
-    });
-});
-
-// Bind sliders
-document.getElementById('param-mutation-rate').addEventListener('input', e => {
-    syncSlidersToWasm();
-});
-
-document.getElementById('param-mutation-amount').addEventListener('input', e => {
-    syncSlidersToWasm();
-});
-
-// Manual Evolve button
-document.getElementById('btn-evolve').addEventListener('click', () => {
-    if (sim) sim.evolveNextGeneration();
-});
-
-// Zap/Mutate button
-document.getElementById('btn-shock').addEventListener('click', () => {
-    if (sim) {
-        sim.triggerSuperMutation();
-        console.log("Super Mutation Shock Active!");
-    }
-});
-
-// Clear track button
-document.getElementById('btn-clear-track').addEventListener('click', () => {
-    if (sim) {
-        sim.reset();
-        loadMapPreset('blank'); // Wipe completely
-    }
-});
