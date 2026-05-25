@@ -152,7 +152,11 @@ function initControls() {
     // 9. Unified Pointer Events (handles mouse, touch, and stylus natively)
     canvas.addEventListener('pointerdown', (e) => {
         isDrawing = true;
-        canvas.setPointerCapture(e.pointerId); // Keep drawing even if cursor exits canvas
+        try {
+            canvas.setPointerCapture(e.pointerId); // Keep drawing even if cursor exits canvas
+        } catch (err) {
+            console.warn("setPointerCapture failed: ", err);
+        }
         handleDraw(e);
     });
     
@@ -164,10 +168,37 @@ function initControls() {
 
     canvas.addEventListener('pointerup', (e) => {
         isDrawing = false;
-        canvas.releasePointerCapture(e.pointerId);
+        try {
+            canvas.releasePointerCapture(e.pointerId);
+        } catch (err) {}
     });
 
     canvas.addEventListener('pointercancel', (e) => {
+        isDrawing = false;
+        try {
+            canvas.releasePointerCapture(e.pointerId);
+        } catch (err) {}
+    });
+
+    // Add robust fallback Touch Events for iOS/mobile compatibility
+    canvas.addEventListener('touchstart', (e) => {
+        isDrawing = true;
+        e.preventDefault(); // Stop mobile scrolling
+        if (e.touches && e.touches.length > 0) {
+            handleDraw(e.touches[0]);
+        }
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+        if (isDrawing) {
+            e.preventDefault(); // Stop mobile scrolling
+            if (e.touches && e.touches.length > 0) {
+                handleDraw(e.touches[0]);
+            }
+        }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', () => {
         isDrawing = false;
     });
 }
