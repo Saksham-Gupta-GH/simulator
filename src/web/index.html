@@ -4,44 +4,38 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
-    <!-- Premium Google Fonts -->
+    <!-- Premium Google Fonts for 80s Vibe -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Share+Tech+Mono&display=swap" rel="stylesheet">
     
     <!-- FontAwesome for visual iconography -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
-    <!-- SEO Optimization -->
-    <title>AeroFlow AI | C++ WebAssembly Interactive Aerodynamics Wind Tunnel</title>
-    <meta name="description" content="A real-time interactive 2D Navier-Stokes aerodynamic wind tunnel simulator written in modern C++ and compiled to WebAssembly, featuring smoke streamlines, pressure heatmaps, airfoil presets, and live drag/lift telemetry.">
-    <meta name="theme-color" content="#020617">
+    <title>NEON DRIVE AI | Evolution Simulator</title>
+    <meta name="theme-color" content="#1a0b2e">
     
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="retro-theme">
     
-    <!-- Visual Gradient Ambient Blobs -->
-    <div class="blob-glow blob-cyan"></div>
-    <div class="blob-glow blob-purple"></div>
+    <!-- CRT Scanline Overlay -->
+    <div class="scanlines"></div>
 
     <div class="app-container">
         
         <!-- Header Banner -->
         <header class="app-header">
             <div class="brand">
-                <div class="logo-icon">
-                    <i class="fa-solid fa-wind"></i>
-                </div>
                 <div class="brand-text">
-                    <h1>AEROFLOW AI</h1>
-                    <span class="sub-logo">C++ &bull; WebAssembly &bull; Aerodynamics Wind Tunnel</span>
+                    <h1 class="neon-text pink">NEON DRIVE AI</h1>
+                    <span class="sub-logo cyan">Neural Network Evolution Simulator</span>
                 </div>
             </div>
             
             <div class="portfolio-links">
                 <a href="https://github.com/Saksham-Gupta-GH" target="_blank" class="glass-btn btn-github">
-                    <i class="fa-brands fa-github"></i> github.com/Saksham-Gupta-GH
+                    <i class="fa-brands fa-github"></i> Saksham-Gupta-GH
                 </a>
                 <span class="badge badge-wasm">Wasm Core Active</span>
             </div>
@@ -50,169 +44,81 @@
         <!-- Main Grid Layout -->
         <main class="app-body">
             
-            <!-- Left Sidebar Controls Dock (Glassmorphic) -->
+            <!-- Left Sidebar Controls Dock -->
             <aside class="sidebar glass-card">
-                <h2 class="section-title"><i class="fa-solid fa-gauge-high"></i> Control Center</h2>
+                <h2 class="section-title cyan"><i class="fa-solid fa-gamepad"></i> ARCADE CONTROLS</h2>
                 
-                <!-- Interactive Drawing Brushes -->
                 <div class="control-group">
-                    <label class="group-label">Interactive Paint Tools</label>
-                    <div class="brush-selector">
-                        <button class="brush-btn active" id="brush-barrier" data-brush="barrier">
-                            <i class="fa-solid fa-pen-nib"></i>
-                            <span>Barrier</span>
+                    <label class="group-label">Evolution Controls</label>
+                    <div class="btn-grid">
+                        <button class="retro-btn btn-primary" id="btn-kill-all">
+                            <i class="fa-solid fa-skull"></i> Kill Generation
                         </button>
-                        <button class="brush-btn" id="brush-emitter" data-brush="emitter">
-                            <i class="fa-solid fa-circle-dot"></i>
-                            <span>Smoke</span>
-                        </button>
-                        <button class="brush-btn" id="brush-eraser" data-brush="erase">
-                            <i class="fa-solid fa-eraser"></i>
-                            <span>Erase</span>
+                        <button class="retro-btn btn-warning" id="btn-reset-track">
+                            <i class="fa-solid fa-road"></i> Reset Track
                         </button>
                     </div>
                 </div>
 
-                <!-- Visualization Mode Selectors -->
                 <div class="control-group">
-                    <label class="group-label">Visualization Layer</label>
-                    <div class="brush-selector" style="grid-template-columns: repeat(3, 1fr);">
-                        <button class="brush-btn active" id="vis-smoke" data-vis="smoke" style="padding: 6px 2px;">
-                            <i class="fa-solid fa-smog"></i>
-                            <span>Smoke</span>
+                    <label class="group-label">Draw Track Walls</label>
+                    <div class="paint-tooltip" style="margin-bottom: 10px;">
+                        Use your mouse to draw custom track boundaries on the canvas!
+                    </div>
+                    <div class="btn-grid">
+                        <button class="retro-btn btn-cyan active" id="btn-draw-wall">
+                            <i class="fa-solid fa-pen"></i> Draw Wall
                         </button>
-                        <button class="brush-btn" id="vis-pressure" data-vis="pressure" style="padding: 6px 2px;">
-                            <i class="fa-solid fa-temperature-high"></i>
-                            <span>Pressure</span>
-                        </button>
-                        <button class="brush-btn" id="vis-vector" data-vis="vector" style="padding: 6px 2px;">
-                            <i class="fa-solid fa-arrows-up-down-left-right"></i>
-                            <span>Vectors</span>
+                        <button class="retro-btn btn-cyan" id="btn-draw-erase">
+                            <i class="fa-solid fa-eraser"></i> Eraser
                         </button>
                     </div>
                 </div>
 
-                <!-- Preloaded Geometric Profiles -->
                 <div class="control-group">
-                    <label class="group-label">Preset Aerospace Profiles</label>
-                    <div class="map-presets">
-                        <button class="map-btn" id="preset-naca" data-preset="1">NACA 0012 Wing</button>
-                        <button class="map-btn" id="preset-boeing" data-preset="2">Boeing Camber</button>
-                        <button class="map-btn" id="preset-f1" data-preset="3">Formula 1 Car</button>
-                        <button class="map-btn" id="preset-bullet" data-preset="4">Bullet Profile</button>
-                        <button class="map-btn" id="preset-block" data-preset="5">Blunt Block</button>
-                        <button class="map-btn active" id="preset-blank" data-preset="0">Blank Sandbox</button>
-                    </div>
-                </div>
-
-                <!-- Simulation Speed -->
-                <div class="control-group">
-                    <div class="label-with-val">
-                        <label class="group-label">Physics Step Multiplier</label>
-                        <span class="slider-value" id="val-speed">1x Normal</span>
-                    </div>
+                    <label class="group-label">Simulation Speed</label>
                     <div class="speed-selector">
                         <button class="speed-btn active" data-speed="1">1x</button>
                         <button class="speed-btn" data-speed="2">2x</button>
-                        <button class="speed-btn" data-speed="3">3x</button>
                         <button class="speed-btn" data-speed="5">5x</button>
+                        <button class="speed-btn" data-speed="10">10x</button>
                     </div>
                 </div>
 
-                <!-- Physical Parameter Sliders -->
                 <div class="control-group">
-                    <h3 class="subsection-title">Aerodynamic Tuning</h3>
-                    
-                    <!-- Angle of Attack -->
-                    <div class="slider-block" id="aoa-container" style="display: none; padding: 10px; background: rgba(0,0,0,0.15); border-radius: 12px; border: 1px solid rgba(255,255,255,0.03);">
-                        <div class="label-with-val">
-                            <span class="slider-label" style="color: var(--text-primary); font-weight: 600;"><i class="fa-solid fa-rotate"></i> Angle of Attack (Pitch)</span>
-                            <span class="slider-value" id="val-aoa" style="color: var(--accent-purple);">0°</span>
-                        </div>
-                        <input type="range" id="param-aoa" min="-20" max="20" step="1" value="0">
+                    <h3 class="subsection-title">Live Brain Visualizer</h3>
+                    <div class="brain-debugger">
+                        <canvas id="network-canvas" width="280" height="200"></canvas>
+                        <p id="intel-description" style="font-size: 10px; color: #ff00ff; text-align: center; margin-top: 10px;">
+                            Viewing weights of the Generation Leader.
+                        </p>
                     </div>
-
-                    <!-- Wind Velocity -->
-                    <div class="slider-block">
-                        <div class="label-with-val">
-                            <span class="slider-label">Tunnel Wind Speed</span>
-                            <span class="slider-value" id="val-wind-speed">1.8 m/s</span>
-                        </div>
-                        <input type="range" id="param-wind-speed" min="0.5" max="3.0" step="0.1" value="1.8">
-                    </div>
-
-                    <!-- Viscosity -->
-                    <div class="slider-block">
-                        <div class="label-with-val">
-                            <span class="slider-label">Fluid Viscosity (Friction)</span>
-                            <span class="slider-value" id="val-viscosity">0.0010</span>
-                        </div>
-                        <input type="range" id="param-viscosity" min="0.0002" max="0.0040" step="0.0001" value="0.0010">
-                    </div>
-                </div>
-
-                <!-- Action Controls Grid -->
-                <div class="btn-grid">
-                    <button class="glass-btn btn-primary" id="btn-clear-barriers">
-                        <i class="fa-solid fa-trash-can"></i> Clear Barriers
-                    </button>
-                    <button class="glass-btn btn-warning" id="btn-reset-fluid">
-                        <i class="fa-solid fa-arrows-spin"></i> Reset Fluid Flow
-                    </button>
                 </div>
 
             </aside>
 
-            <!-- Center Stage: Simulation Canvas and HUD Badges -->
+            <!-- Center Stage: Simulation Canvas -->
             <section class="canvas-panel glass-card">
                 
                 <!-- Overlay Telemetry Stats HUD -->
                 <div class="stats-overlay">
                     <div class="stat-badge">
-                        <span class="stat-label">Drag Coeff (Cd):</span>
-                        <span class="stat-val text-green" id="stat-drag">0.00</span>
+                        <span class="stat-label">GENERATION:</span>
+                        <span class="stat-val neon-pink" id="stat-gen">1</span>
                     </div>
                     <div class="stat-badge">
-                        <span class="stat-label">Lift Force (Cl):</span>
-                        <span class="stat-val text-cyan" id="stat-lift">0.00</span>
+                        <span class="stat-label">ALIVE:</span>
+                        <span class="stat-val neon-cyan" id="stat-alive">100/100</span>
                     </div>
                     <div class="stat-badge">
-                        <span class="stat-label">Reynolds (Re):</span>
-                        <span class="stat-val text-orange" id="stat-reynolds">0</span>
+                        <span class="stat-label">MAX FITNESS:</span>
+                        <span class="stat-val neon-yellow" id="stat-fitness">0</span>
                     </div>
                 </div>
 
                 <!-- Core Canvas Sandbox -->
                 <div class="canvas-wrapper">
-                    <canvas id="sim-canvas" width="900" height="600"></canvas>
-                    <div class="paint-tooltip">
-                        <i class="fa-solid fa-paintbrush"></i> Click and drag to paint barriers! Presets enable automated aerodynamic benchmarking.
-                    </div>
-                </div>
-
-                <!-- Right/Bottom Panel: Live Aerodynamic Efficiency Chart -->
-                <div class="brain-debugger">
-                    <div class="hud-header">
-                        <div class="hud-title">
-                            <i class="fa-solid fa-chart-line text-cyan"></i>
-                            <h3>Aerodynamic Efficiency History (L/D Ratio Timeline)</h3>
-                        </div>
-                        <span class="badge badge-brain" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3); color: var(--text-success);">Active Telemetry</span>
-                    </div>
-                    
-                    <div class="hud-content" style="display: grid; grid-template-columns: 1fr 220px; gap: 16px; align-items: center;">
-                        <!-- Canvas dedicated to rendering efficiency plot -->
-                        <div class="network-canvas-wrapper">
-                            <canvas id="network-canvas" width="550" height="150" style="height: 120px;"></canvas>
-                        </div>
-
-                        <!-- Technical Information panel -->
-                        <div class="brain-intel" style="border-top: none; padding-top: 0;">
-                            <p id="intel-description" style="font-size: 11px;">
-                                Plotting the **Lift-to-Drag Ratio ($L/D$)** over time. Higher positive values prove efficient lift (airplanes), while negative values prove downforce (race cars). A flat zero represents balanced drag or symmetry.
-                            </p>
-                        </div>
-                    </div>
+                    <canvas id="sim-canvas" width="800" height="600"></canvas>
                 </div>
 
             </section>
@@ -221,12 +127,9 @@
 
         <!-- Footer bar -->
         <footer class="app-footer glass-card">
-            <div class="footer-meta">
-                <i class="fa-solid fa-gears"></i>
-                <span>C++ Navier-Stokes Stable Fluids solver executing $150 \times 100$ boundary pressure grids.</span>
-            </div>
-            <div class="footer-badge">
-                <i class="fa-solid fa-microchip text-cyan"></i> Zero-Copy Memory Active
+            <div class="footer-meta cyan">
+                <i class="fa-solid fa-microchip"></i>
+                <span>C++ Genetic Algorithm running 100 Neural Networks at 60 FPS.</span>
             </div>
         </footer>
 

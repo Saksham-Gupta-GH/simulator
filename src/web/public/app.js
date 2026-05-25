@@ -1,529 +1,334 @@
-// ==========================================================================
-// AeroFlow AI - Wind Tunnel JavaScript Integration Layer (Zero-Copy WebAssembly)
-// ==========================================================================
-
-let sim = null;
 let moduleRef = null;
+let evoManager = null;
 
-// Grid configuration matching C++ backend constants
-const gridWidth = 150;
-const gridHeight = 100;
-const gridSize = gridWidth * gridHeight;
-const cellScale = 6; // Scale grid up to fit the 900x600 canvas
+// Track bounds
+let trackLines = []; // flat array [x1, y1, x2, y2, x1, y1...]
+let isDrawingWall = false;
+let currentWallStart = null;
+let activeTool = 'draw'; // 'draw' or 'erase'
 
-// UI active status registers
-let activeBrush = 'barrier'; // 'barrier', 'emitter', 'erase'
-let activeVis = 'smoke';      // 'smoke', 'pressure', 'vector'
+// Engine state
 let activeSpeedMultiplier = 1;
-let activePreset = 0;
+const dt = 0.5; // Physics timestep
 
-// Mouse drawing states
-let isDrawing = false;
-let brushRadius = 2;
+// UI Elements
+const canvas = document.getElementById('sim-canvas');
+const ctx = canvas.getContext('2d');
+const netCanvas = document.getElementById('network-canvas');
+const netCtx = netCanvas.getContext('2d');
 
-// Real-time efficiency chart history arrays
-const ldHistory = [];
-const maxHistoryLength = 150;
+const genLabel = document.getElementById('stat-gen');
+const aliveLabel = document.getElementById('stat-alive');
+const fitnessLabel = document.getElementById('stat-fitness');
 
-// Initialize Emscripten WebAssembly core loader
-createFluidSimModule({
-    locateFile: (path) => path.endsWith('.wasm') ? 'wasm/' + path : path
-}).then((module) => {
-    moduleRef = module;
-    
-    // Allocate the unified Simulation engine in C++ heap
-    sim = new module.Simulation(gridWidth, gridHeight);
-    
-    console.log("AeroFlow AI C++ WebAssembly Physics Engine loaded successfully!");
-    
-    // Initialize user controls, presets, and start the render loops
-    initControls();
-    startSimulationLoop();
-});
+// Basic closed loop track for default
+function createDefaultTrack() {
+    trackLines = [
+        100, 100, 700, 100,
+        700, 100, 700, 500,
+        700, 500, 100, 500,
+        100, 500, 100, 100,
+        
+        200, 200, 600, 200,
+        600, 200, 600, 400,
+        600, 400, 200, 400,
+        200, 400, 200, 200
+    ];
+}
 
-// Setup DOM UI selectors and interaction triggers
 function initControls() {
-    // 1. Brush buttons
-    const brushButtons = document.querySelectorAll('.brush-btn[data-brush]');
-    brushButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-            brushButtons.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            activeBrush = btn.getAttribute('data-brush');
-        });
+    createDefaultTrack();
+
+    document.getElementById('btn-kill-all').addEventListener('click', () => {
+        if(evoManager) evoManager.nextGeneration();
     });
 
-    // 2. Vis Layer buttons
-    const visButtons = document.querySelectorAll('.brush-btn[data-vis]');
-    visButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-            visButtons.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            activeVis = btn.getAttribute('data-vis');
-        });
+    document.getElementById('btn-reset-track').addEventListener('click', () => {
+        trackLines = [];
+        if(evoManager) evoManager.setTrackBoundaries(new Float32Array(0));
     });
 
-    // 3. Preset selectors
-    const presetButtons = document.querySelectorAll('.map-btn');
-    const aoaContainer = document.getElementById('aoa-container');
-    const aoaSlider = document.getElementById('param-aoa');
-    const aoaValueLabel = document.getElementById('val-aoa');
+    const drawBtn = document.getElementById('btn-draw-wall');
+    const eraseBtn = document.getElementById('btn-draw-erase');
 
-    presetButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-            presetButtons.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            
-            activePreset = parseInt(btn.getAttribute('data-preset'));
-            sim.loadPreset(activePreset);
-            
-            // Show/Hide Angle of Attack tuning panel based on loaded shapes
-            if (activePreset !== 0) {
-                aoaContainer.style.display = 'block';
-                // Reset angle slider when switching presets
-                aoaSlider.value = 0;
-                aoaValueLabel.innerText = '0°';
-                sim.setAngleOfAttack(0);
-            } else {
-                aoaContainer.style.display = 'none';
-            }
-
-            // Flush telemetry graphs
-            ldHistory.length = 0;
-        });
+    drawBtn.addEventListener('click', () => {
+        activeTool = 'draw';
+        drawBtn.classList.add('active');
+        eraseBtn.classList.remove('active');
     });
 
-    // 4. Angle of Attack Slider
-    aoaSlider.addEventListener('input', (e) => {
-        const val = parseInt(e.target.value);
-        aoaValueLabel.innerText = (val > 0 ? '+' : '') + val + '°';
-        sim.setAngleOfAttack(val);
+    eraseBtn.addEventListener('click', () => {
+        activeTool = 'erase';
+        eraseBtn.classList.add('active');
+        drawBtn.classList.remove('active');
     });
 
-    // 5. Physics Step Multiplier (Speed)
-    const speedButtons = document.querySelectorAll('.speed-btn');
-    const speedValLabel = document.getElementById('val-speed');
-    speedButtons.forEach(btn => {
+    document.querySelectorAll('.speed-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            speedButtons.forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             activeSpeedMultiplier = parseInt(btn.getAttribute('data-speed'));
-            speedValLabel.innerText = activeSpeedMultiplier + 'x Hyperspeed';
         });
     });
 
-    // 6. Wind Speed Slider
-    const windSlider = document.getElementById('param-wind-speed');
-    const windLabel = document.getElementById('val-wind-speed');
-    windSlider.addEventListener('input', (e) => {
-        const val = parseFloat(e.target.value);
-        windLabel.innerText = val.toFixed(1) + ' m/s';
-    });
-
-    // 7. Viscosity Slider
-    const viscositySlider = document.getElementById('param-viscosity');
-    const viscosityLabel = document.getElementById('val-viscosity');
-    viscositySlider.addEventListener('input', (e) => {
-        const val = parseFloat(e.target.value);
-        viscosityLabel.innerText = val.toFixed(4);
-    });
-
-    // 8. Trigger Buttons
-    document.getElementById('btn-clear-barriers').addEventListener('click', () => {
-        sim.clearAllObstacles();
-        presetButtons.forEach(b => b.classList.remove('active'));
-        document.getElementById('preset-blank').classList.add('active');
-        aoaContainer.style.display = 'none';
-        activePreset = 0;
-        ldHistory.length = 0;
-    });
-
-    document.getElementById('btn-reset-fluid').addEventListener('click', () => {
-        sim.resetSimulation();
-        presetButtons.forEach(b => b.classList.remove('active'));
-        document.getElementById('preset-blank').classList.add('active');
-        aoaContainer.style.display = 'none';
-        activePreset = 0;
-        ldHistory.length = 0;
-    });
-
-    // 9. Canvas drawing events setup
-    const canvas = document.getElementById('sim-canvas');
-    // 9. Unified Pointer Events (handles mouse, touch, and stylus natively)
-    canvas.addEventListener('pointerdown', (e) => {
-        isDrawing = true;
-        try {
-            canvas.setPointerCapture(e.pointerId); // Keep drawing even if cursor exits canvas
-        } catch (err) {
-            console.warn("setPointerCapture failed: ", err);
-        }
-        handleDraw(e);
-    });
-    
-    canvas.addEventListener('pointermove', (e) => {
-        if (isDrawing) {
-            handleDraw(e);
-        }
-    });
-
-    canvas.addEventListener('pointerup', (e) => {
-        isDrawing = false;
-        try {
-            canvas.releasePointerCapture(e.pointerId);
-        } catch (err) {}
-    });
-
-    canvas.addEventListener('pointercancel', (e) => {
-        isDrawing = false;
-        try {
-            canvas.releasePointerCapture(e.pointerId);
-        } catch (err) {}
-    });
-
-    // Add robust fallback Touch Events for iOS/mobile compatibility
-    canvas.addEventListener('touchstart', (e) => {
-        isDrawing = true;
-        e.preventDefault(); // Stop mobile scrolling
-        if (e.touches && e.touches.length > 0) {
-            handleDraw(e.touches[0]);
-        }
-    }, { passive: false });
-
-    canvas.addEventListener('touchmove', (e) => {
-        if (isDrawing) {
-            e.preventDefault(); // Stop mobile scrolling
-            if (e.touches && e.touches.length > 0) {
-                handleDraw(e.touches[0]);
+    // Mouse events for track drawing
+    canvas.addEventListener('mousedown', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+        
+        if (activeTool === 'draw') {
+            isDrawingWall = true;
+            currentWallStart = {x, y};
+        } else if (activeTool === 'erase') {
+            // Very simple eraser: remove lines near click
+            const eraseRadius = 20;
+            let newLines = [];
+            for(let i=0; i<trackLines.length; i+=4) {
+                const mx = (trackLines[i] + trackLines[i+2]) / 2;
+                const my = (trackLines[i+1] + trackLines[i+3]) / 2;
+                const dist = Math.sqrt((mx-x)*(mx-x) + (my-y)*(my-y));
+                if (dist > eraseRadius) {
+                    newLines.push(trackLines[i], trackLines[i+1], trackLines[i+2], trackLines[i+3]);
+                }
             }
+            trackLines = newLines;
+            if(evoManager) evoManager.setTrackBoundaries(new Float32Array(trackLines));
         }
-    }, { passive: false });
+    });
 
-    canvas.addEventListener('touchend', () => {
-        isDrawing = false;
+    canvas.addEventListener('mousemove', (e) => {
+        if (!isDrawingWall) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+        
+        // Render preview (handled in draw loop by reading currentWallStart)
+        currentWallStart.currentX = x;
+        currentWallStart.currentY = y;
+    });
+
+    canvas.addEventListener('mouseup', (e) => {
+        if (isDrawingWall && currentWallStart) {
+            const rect = canvas.getBoundingClientRect();
+            const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+            const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+            
+            trackLines.push(currentWallStart.x, currentWallStart.y, x, y);
+            if(evoManager) {
+                // Float32Array conversion for C++
+                const f32 = new Float32Array(trackLines);
+                evoManager.setTrackBoundaries(f32);
+            }
+            
+            isDrawingWall = false;
+            currentWallStart = null;
+        }
     });
 }
 
-// Coordinates brush coordinates translation onto C++ simulation grid
-function handleDraw(e) {
-    const canvas = document.getElementById('sim-canvas');
-    const rect = canvas.getBoundingClientRect();
+function drawNetwork(weightsFlat) {
+    netCtx.fillStyle = '#05020a';
+    netCtx.fillRect(0, 0, netCanvas.width, netCanvas.height);
     
-    // Calculate click coordinates relative to screen dimensions
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    if(!weightsFlat || weightsFlat.length < 3) return;
     
-    const clickX = (e.clientX - rect.left) * scaleX;
-    const clickY = (e.clientY - rect.top) * scaleY;
+    let numLayers = weightsFlat[0];
+    let topology = [];
+    for(let i=0; i<numLayers; i++) topology.push(weightsFlat[1+i]);
     
-    // Scale down coordinates to fit 150x100 physics coordinates
-    const gridX = Math.floor(clickX / cellScale);
-    const gridY = Math.floor(clickY / cellScale);
-
-    if (gridX >= 0 && gridX < gridWidth && gridY >= 0 && gridY < gridHeight) {
-        if (activeBrush === 'barrier') {
-            sim.drawObstacleBrush(gridX, gridY, brushRadius, true);
-        } else if (activeBrush === 'erase') {
-            sim.drawObstacleBrush(gridX, gridY, brushRadius, false);
-        } else if (activeBrush === 'emitter') {
-            // Click to inject custom density dyes (drawn in high columns)
-            for (let intOffset = -2; intOffset <= 2; intOffset++) {
-                const cy = gridY + intOffset;
-                if (cy >= 0 && cy < gridHeight) {
-                    // We interact with density fields by drawing them directly
-                    // To do this, JS triggers density adds via solver pointer
-                    const densityPtr = sim.getDensityPtr();
-                    const HEAPF32 = moduleRef.HEAPF32;
-                    const idx = gridX + cy * gridWidth;
-                    HEAPF32[densityPtr / 4 + idx] = 4.0; // feed intense smoke dye
-                }
+    let ptr = 1 + numLayers;
+    
+    // Draw logic
+    const paddingX = 40;
+    const paddingY = 20;
+    const spacingX = (netCanvas.width - 2 * paddingX) / (numLayers - 1);
+    
+    let nodePositions = []; // layer -> neuron -> {x, y}
+    
+    for (let l = 0; l < numLayers; l++) {
+        let layerPos = [];
+        const numNeurons = topology[l];
+        const spacingY = numNeurons > 1 ? (netCanvas.height - 2 * paddingY) / (numNeurons - 1) : 0;
+        const startY = numNeurons === 1 ? netCanvas.height / 2 : paddingY;
+        
+        for (let n = 0; n < numNeurons; n++) {
+            const x = paddingX + l * spacingX;
+            const y = startY + n * spacingY;
+            layerPos.push({x, y});
+            
+            // Draw nodes
+            netCtx.beginPath();
+            netCtx.arc(x, y, 6, 0, Math.PI * 2);
+            netCtx.fillStyle = l === 0 ? '#00ffff' : (l === numLayers - 1 ? '#ff00ff' : '#8a2be2');
+            netCtx.fill();
+            netCtx.closePath();
+        }
+        nodePositions.push(layerPos);
+    }
+    
+    // We only have weights, so drawing accurate active lines requires full brain eval.
+    // Let's just draw connecting lines to look cool.
+    netCtx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    netCtx.lineWidth = 1;
+    for (let l = 1; l < numLayers; l++) {
+        for (let n = 0; n < topology[l]; n++) {
+            for (let prevN = 0; prevN < topology[l-1]; prevN++) {
+                netCtx.beginPath();
+                netCtx.moveTo(nodePositions[l-1][prevN].x, nodePositions[l-1][prevN].y);
+                netCtx.lineTo(nodePositions[l][n].x, nodePositions[l][n].y);
+                netCtx.stroke();
             }
         }
     }
 }
 
-// Main physics execution and graphic rendering loops
 function startSimulationLoop() {
-    const canvas = document.getElementById('sim-canvas');
-    const ctx = canvas.getContext('2d');
-    
-    const chartCanvas = document.getElementById('network-canvas');
-    const chartCtx = chartCanvas.getContext('2d');
-
-    // Setup an offscreen buffer for lightning-fast pressure heatmap renders
-    const offscreenCanvas = document.createElement('canvas');
-    offscreenCanvas.width = gridWidth;
-    offscreenCanvas.height = gridHeight;
-    const offscreenCtx = offscreenCanvas.getContext('2d');
-    const offscreenImgData = offscreenCtx.createImageData(gridWidth, gridHeight);
-
-    // Active DOM telemetry references
-    const dragLabel = document.getElementById('stat-drag');
-    const liftLabel = document.getElementById('stat-lift');
-    const reynoldsLabel = document.getElementById('stat-reynolds');
-
-    const dt = 0.05; // Timestep step
-
     function frame() {
         try {
-            // Read current slider states to feed into C++ steps
-            const windSpeed = parseFloat(document.getElementById('param-wind-speed').value);
-            const viscosity = parseFloat(document.getElementById('param-viscosity').value);
+            if (!evoManager) { requestAnimationFrame(frame); return; }
 
-            // 1. Advance C++ physics simulation by active speed multiplier
             for (let s = 0; s < activeSpeedMultiplier; ++s) {
-                sim.update(dt, viscosity, windSpeed);
+                evoManager.update(dt);
             }
 
-            // 2. Perform zero-copy pointer wraps
-            const HEAPU8 = moduleRef.HEAPU8;
-            const HEAPF32 = moduleRef.HEAPF32;
+            if (evoManager.allDead()) {
+                evoManager.nextGeneration();
+            }
 
-            const uPtr = sim.getUPtr();
-            const vPtr = sim.getVPtr();
-            const pPtr = sim.getPressurePtr();
-            const dPtr = sim.getDensityPtr();
-            const obsPtr = sim.getObstaclePtr();
-            const partPtr = sim.getParticlesPtr();
-            const partCount = sim.getParticleCount();
-
-            // Directly reference subarrays on WebAssembly memory heap without copying data!
-            const obstacles = new Uint8Array(HEAPU8.buffer, obsPtr, gridSize);
-            const pressures = new Float32Array(HEAPF32.buffer, pPtr, gridSize);
-            const densities = new Float32Array(HEAPF32.buffer, dPtr, gridSize);
-            const velocitiesU = new Float32Array(HEAPF32.buffer, uPtr, gridSize);
-            const velocitiesV = new Float32Array(HEAPF32.buffer, vPtr, gridSize);
-            const particles = new Float32Array(HEAPF32.buffer, partPtr, partCount * 3);
-
-            // 3. Clear canvas and draw visualizations
-            ctx.fillStyle = '#080b11';
+            ctx.fillStyle = '#05020a';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Render backgrounds layers depending on active vis selection
-            if (activeVis === 'pressure') {
-                // PRESSURE HEATMAP: Scale pressure values to glowing color arrays
-                const data = offscreenImgData.data;
-                for (let i = 0; i < gridSize; ++i) {
-                    if (obstacles[i] === 1) {
-                        // Obstacles rendered as dark charcoal
-                        data[i * 4] = 13;     // R
-                        data[i * 4 + 1] = 17; // G
-                        data[i * 4 + 2] = 25; // B
-                        data[i * 4 + 3] = 255;
-                        continue;
-                    }
-                    
-                    // Normalizing pressures around baseline
-                    const pVal = pressures[i] * 12.0; 
-                    
-                    let r = 0, g = 0, b = 0;
-                    if (pVal > 0) {
-                        // High pressure -> glowing orange/red
-                        r = Math.min(255, Math.floor(pVal * 190 + 20));
-                        g = Math.min(255, Math.floor(pVal * 60));
-                        b = Math.min(255, Math.floor(pVal * 10));
-                    } else {
-                        // Low pressure (vacuum suction) -> deep indigo/violet
-                        const nVal = Math.abs(pVal);
-                        r = Math.min(255, Math.floor(nVal * 60));
-                        g = Math.min(255, Math.floor(nVal * 30));
-                        b = Math.min(255, Math.floor(nVal * 220 + 40));
-                    }
+            // Draw Track
+            ctx.strokeStyle = '#00ffff';
+            ctx.lineWidth = 4;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#00ffff';
+            for (let i = 0; i < trackLines.length; i += 4) {
+                ctx.beginPath();
+                ctx.moveTo(trackLines[i], trackLines[i+1]);
+                ctx.lineTo(trackLines[i+2], trackLines[i+3]);
+                ctx.stroke();
+            }
+            
+            // Draw current drawing wall
+            if (isDrawingWall && currentWallStart && currentWallStart.currentX) {
+                ctx.strokeStyle = '#ff00ff';
+                ctx.shadowColor = '#ff00ff';
+                ctx.beginPath();
+                ctx.moveTo(currentWallStart.x, currentWallStart.y);
+                ctx.lineTo(currentWallStart.currentX, currentWallStart.currentY);
+                ctx.stroke();
+            }
+            ctx.shadowBlur = 0; // Turn off glow for cars for performance
 
-                    // Add faint baseline ambient cyan to normal channels
-                    data[i * 4] = Math.max(r, 6);
-                    data[i * 4 + 1] = Math.max(g, 15);
-                    data[i * 4 + 2] = Math.max(b, 25);
-                    data[i * 4 + 3] = 255;
+            // Read Car Data
+            const ptr = evoManager.getCarDataPtr();
+            const size = evoManager.getCarDataSize();
+            const HEAPF32 = moduleRef.HEAPF32;
+            const carData = new Float32Array(HEAPF32.buffer, ptr, size);
+            
+            const numCars = size / 9; // 9 floats per car
+            let bestCarIdx = -1;
+            
+            // Draw Cars
+            for (let i = 0; i < numCars; ++i) {
+                const idx = i * 9;
+                const x = carData[idx];
+                const y = carData[idx+1];
+                const angle = carData[idx+2];
+                const isDead = carData[idx+3] > 0.5;
+                
+                if (isDead) {
+                    ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+                    ctx.fillRect(x - 2, y - 2, 4, 4);
+                    continue;
                 }
                 
-                // Push offscreen pixel buffer onto offscreen canvas
-                offscreenCtx.putImageData(offscreenImgData, 0, 0);
+                if (bestCarIdx === -1) bestCarIdx = i; // First alive car is visually "lead"
                 
-                // Scale the offscreen canvas up onto the 900x600 canvas using GPU bilinear interpolation
-                ctx.imageSmoothingEnabled = true;
-                ctx.drawImage(offscreenCanvas, 0, 0, canvas.width, canvas.height);
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.rotate(angle);
                 
-            } else if (activeVis === 'vector') {
-                // VELOCITY VECTORS: Draw simple velocity direction arrows
-                ctx.strokeStyle = 'rgba(6, 182, 212, 0.22)';
-                ctx.lineWidth = 1;
+                // Draw Car Body
+                ctx.fillStyle = i === 0 ? '#ff00ff' : '#8a2be2'; // Best car is pink
+                ctx.fillRect(-15, -25, 30, 50);
                 
-                const stride = 5; // Draw vectors at every 5th cell to prevent visual overcrowding
-                for (let y = 2; y < gridHeight - 2; y += stride) {
-                    for (let x = 2; x < gridWidth - 2; x += stride) {
-                        const idx = x + y * gridWidth;
-                        if (obstacles[idx] === 1) continue;
-
-                        const uVal = velocitiesU[idx] * 8.0;
-                        const vVal = velocitiesV[idx] * 8.0;
-                        const speed = Math.sqrt(uVal * uVal + vVal * vVal);
-
-                        const startX = x * cellScale + cellScale / 2;
-                        const startY = y * cellScale + cellScale / 2;
-
+                // Draw "Headlights"
+                ctx.fillStyle = '#ffff00';
+                ctx.fillRect(-12, -25, 6, 4);
+                ctx.fillRect(6, -25, 6, 4);
+                
+                ctx.restore();
+                
+                // Draw Rays for Best Car
+                if (i === 0) { // The elite car
+                    ctx.strokeStyle = 'rgba(0, 255, 255, 0.4)';
+                    ctx.lineWidth = 1;
+                    const raySpread = Math.PI / 2;
+                    const angleStep = raySpread / 4;
+                    for (let r = 0; r < 5; ++r) {
+                        const dist = carData[idx + 4 + r];
+                        const rAngle = angle - (raySpread/2) + (r * angleStep);
+                        const ex = x + Math.sin(rAngle) * dist;
+                        const ey = y - Math.cos(rAngle) * dist;
+                        
                         ctx.beginPath();
-                        ctx.moveTo(startX, startY);
-                        ctx.lineTo(startX + uVal * cellScale, startY + vVal * cellScale);
+                        ctx.moveTo(x, y);
+                        ctx.lineTo(ex, ey);
                         ctx.stroke();
-                    }
-                }
-            }
-
-            // Render flowing smoke streamlines (Particles)
-            if (activeVis === 'smoke') {
-                // Draw 8,000 glowing vector smoke particles
-                for (let i = 0; i < partCount; ++i) {
-                    const px = particles[i * 3] * cellScale;
-                    const py = particles[i * 3 + 1] * cellScale;
-                    const speed = particles[i * 3 + 2] * 2.8;
-
-                    // Colorize streamlines dynamically based on speed (Bernoulli coloring!)
-                    let color = 'rgba(6, 182, 212, 0.42)'; // cyan default (standard speed)
-                    if (speed > 4.5) {
-                        color = 'rgba(168, 85, 247, 0.65)'; // Violet/Purple (accelerated flow / lift)
-                    } else if (speed < 0.6) {
-                        color = 'rgba(249, 115, 22, 0.40)'; // Amber/Orange (wake turbulence stagnation)
-                    }
-
-                    ctx.fillStyle = color;
-                    ctx.fillRect(px, py, 1.5, 1.5);
-                }
-            } else {
-                // Draw faint smoke streamlines on top of pressure or vector modes to preserve reference flow
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-                for (let i = 0; i < partCount; i += 2) {
-                    const px = particles[i * 3] * cellScale;
-                    const py = particles[i * 3 + 1] * cellScale;
-                    ctx.fillRect(px, py, 1.0, 1.0);
-                }
-            }
-
-            // 4. Paint rigid solid obstacles on top (Paint barriers)
-            ctx.fillStyle = '#0d1119';
-            ctx.strokeStyle = '#06b6d4';
-            ctx.lineWidth = 1.5;
-
-            for (let y = 1; y < gridHeight - 1; ++y) {
-                for (let x = 1; x < gridWidth - 1; ++x) {
-                    const idx = x + y * gridWidth;
-                    if (obstacles[idx] === 1) {
-                        const startX = x * cellScale;
-                        const startY = y * cellScale;
                         
-                        ctx.fillRect(startX, startY, cellScale, cellScale);
-                        
-                        // Draw outer border outlines for neighboring fluid faces
-                        if (obstacles[idx - 1] === 0 || obstacles[idx + 1] === 0 || 
-                            obstacles[idx - gridWidth] === 0 || obstacles[idx + gridWidth] === 0) {
-                            ctx.strokeRect(startX, startY, cellScale, cellScale);
-                        }
+                        // Hit dot
+                        ctx.fillStyle = '#ff00ff';
+                        ctx.fillRect(ex-2, ey-2, 4, 4);
                     }
                 }
             }
 
-            // 5. Update Telemetry displays
-            const dragVal = sim.getDragCoefficient();
-            const liftVal = sim.getLiftCoefficient();
-            const reynoldsVal = Math.round(sim.getReynoldsNumber());
-
-            dragLabel.innerText = dragVal.toFixed(3);
-            liftLabel.innerText = liftVal.toFixed(3);
-            reynoldsLabel.innerText = reynoldsVal.toLocaleString();
-
-            // Style telemetry labels based on active aero states (F1 downforce warning)
-            if (liftVal < -0.05) {
-                liftLabel.className = "stat-val text-orange";
-                liftLabel.innerText = liftVal.toFixed(3) + " DF"; // Downforce
-            } else if (liftVal > 0.05) {
-                liftLabel.className = "stat-val text-cyan";
-            } else {
-                liftLabel.className = "stat-val";
+            // Update Telemetry
+            genLabel.innerText = evoManager.generation;
+            aliveLabel.innerText = evoManager.getAliveCount() + "/" + numCars;
+            fitnessLabel.innerText = Math.round(evoManager.getCurrentMaxFitness());
+            
+            // Draw Brain
+            if (numCars > 0) {
+                // Convert std::vector to JS Array
+                const brainVec = evoManager.getBestBrainWeights();
+                const brainArr = [];
+                for(let i=0; i<brainVec.size(); i++) {
+                    brainArr.push(brainVec.get(i));
+                }
+                brainVec.delete();
+                drawNetwork(brainArr);
             }
-
-            // Calculate and push active Lift-to-Drag ratio to history array
-            const ldRatio = (Math.abs(dragVal) > 0.002) ? (liftVal / dragVal) : 0.0;
-            ldHistory.push(ldRatio);
-            if (ldHistory.length > maxHistoryLength) {
-                ldHistory.shift();
-            }
-
-            // 6. Render real-time Efficiency Line Chart
-            renderEfficiencyChart(chartCtx, chartCanvas);
 
             requestAnimationFrame(frame);
         } catch (e) {
-            console.error("Frame crash: ", e);
+            console.error(e);
             ctx.fillStyle = 'red';
             ctx.font = '20px monospace';
             ctx.fillText("CRASH: " + e.message, 20, 40);
         }
     }
-
     requestAnimationFrame(frame);
 }
 
-// Draw the beautiful scrolling line graph
-function renderEfficiencyChart(ctx, canvas) {
-    ctx.fillStyle = '#04070d';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Draw grid references lines
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
-    ctx.lineWidth = 1;
+// Load WebAssembly
+createFluidSimModule({
+    locateFile: (path) => path.endsWith('.wasm') ? 'wasm/' + path : path
+}).then((module) => {
+    moduleRef = module;
     
-    // Baseline zero line
-    const zeroY = canvas.height / 2;
-    ctx.beginPath();
-    ctx.moveTo(0, zeroY);
-    ctx.lineTo(canvas.width, zeroY);
-    ctx.stroke();
-
-    // High efficiency positive baseline line
-    ctx.strokeStyle = 'rgba(6, 182, 212, 0.06)';
-    ctx.beginPath();
-    ctx.moveTo(0, zeroY - 40);
-    ctx.lineTo(canvas.width, zeroY - 40);
-    ctx.moveTo(0, zeroY + 40);
-    ctx.lineTo(canvas.width, zeroY + 40);
-    ctx.stroke();
-
-    if (ldHistory.length < 2) {
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = '10px "Share Tech Mono"';
-        ctx.fillText("WAITING FOR COMPONENT TELEMETRY...", canvas.width / 2 - 100, zeroY + 4);
-        return;
-    }
-
-    // Draw historical line plot
-    ctx.strokeStyle = 'rgba(16, 185, 129, 0.85)'; // Emerald line
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-
-    const stepX = canvas.width / (maxHistoryLength - 1);
+    // Spawn 100 cars at position 150, 450 facing UP (angle 0)
+    evoManager = new module.EvolutionManager(100, 150, 450, 0);
     
-    // Find absolute max in history to scale graph cleanly
-    let maxVal = 0.5;
-    for (let i = 0; i < ldHistory.length; ++i) {
-        maxVal = Math.max(maxVal, Math.abs(ldHistory[i]));
-    }
+    initControls();
     
-    // Smooth scaling envelope
-    const scaleY = (canvas.height / 2 - 12) / maxVal;
-
-    for (let i = 0; i < ldHistory.length; ++i) {
-        const x = i * stepX;
-        const y = zeroY - ldHistory[i] * scaleY;
-        if (i === 0) {
-            ctx.moveTo(x, y);
-        } else {
-            ctx.lineTo(x, y);
-        }
-    }
-    ctx.stroke();
-
-    // Render current L/D value label on graph
-    const latestVal = ldHistory[ldHistory.length - 1];
-    ctx.fillStyle = latestVal >= 0.01 ? '#10b981' : (latestVal <= -0.01 ? '#f97316' : '#94a3b8');
-    ctx.font = 'bold 12px "Share Tech Mono"';
-    ctx.fillText("L/D RATIO: " + (latestVal >= 0 ? '+' : '') + latestVal.toFixed(2), 15, 20);
-}
+    // Set initial track
+    const f32 = new Float32Array(trackLines);
+    evoManager.setTrackBoundaries(f32);
+    
+    console.log("Neon Drive AI Loaded!");
+    startSimulationLoop();
+});
