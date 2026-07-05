@@ -3,7 +3,7 @@
 #define IX(x, y) ((x) + (y) * N)
 
 FluidSolver::FluidSolver(int N, float diffusion, float viscosity, float dt)
-    : N(N), dt(dt), diff(diffusion), visc(viscosity) {
+    : N(N), dt(dt), diff(diffusion), visc(viscosity), vort_strength(0.4f) {
     
     size = N * N;
     iter = 16;
@@ -203,8 +203,8 @@ void FluidSolver::step() {
             float len = std::sqrt(dx * dx + dy * dy) + 1e-5f;
             dx = 0.5f * dx / len;
             dy = 0.5f * dy / len;
-            Vx[IX(i, j)] += dx * curl[IX(i, j)];
-            Vy[IX(i, j)] += dy * curl[IX(i, j)];
+            Vx[IX(i, j)] += dx * curl[IX(i, j)] * vort_strength;
+            Vy[IX(i, j)] += dy * curl[IX(i, j)] * vort_strength;
         }
     }
 

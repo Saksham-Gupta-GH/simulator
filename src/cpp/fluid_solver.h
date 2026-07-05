@@ -13,6 +13,7 @@ private:
     float dt;
     float diff;
     float visc;
+    float vort_strength;
 
     std::vector<float> densityR;
     std::vector<float> densityG;
@@ -52,6 +53,7 @@ public:
 
     void setViscosity(float v) { visc = v; }
     void setDiffusion(float d) { diff = d; }
+    void setVorticity(float v) { vort_strength = v; }
 
     uintptr_t getDensityRPtr() { return reinterpret_cast<uintptr_t>(densityR.data()); }
     uintptr_t getDensityGPtr() { return reinterpret_cast<uintptr_t>(densityG.data()); }

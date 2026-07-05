@@ -13,6 +13,7 @@ EMSCRIPTEN_BINDINGS(fluid_sim_module) {
         .function("clearObstacles", &FluidSolver::clearObstacles)
         .function("setViscosity", &FluidSolver::setViscosity)
         .function("setDiffusion", &FluidSolver::setDiffusion)
+        .function("setVorticity", &FluidSolver::setVorticity)
         
         .function("getDensityRPtr", &FluidSolver::getDensityRPtr, allow_raw_pointers())
         .function("getDensityGPtr", &FluidSolver::getDensityGPtr, allow_raw_pointers())
