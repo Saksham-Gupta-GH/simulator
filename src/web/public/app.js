@@ -22,6 +22,8 @@ offscreenCanvas.width = N;
 offscreenCanvas.height = N;
 const offCtx = offscreenCanvas.getContext('2d');
 let imgData = offCtx.createImageData(N, N);
+let prevData = new Uint8ClampedArray(N * N * 4);
+prevData.fill(255); // initialize with white to prevent dark flash
 
 // Low-Res Physics Buffer (Obstacles)
 const obsCanvas = document.createElement('canvas');
@@ -503,6 +505,8 @@ function initControls() {
         offscreenCanvas.width = N;
         offscreenCanvas.height = N;
         imgData = offCtx.createImageData(N, N);
+        prevData = new Uint8ClampedArray(N * N * 4);
+        prevData.fill(255);
         
         obsCanvas.width = N;
         obsCanvas.height = N;
@@ -662,29 +666,36 @@ function render() {
             
             const maxD = Math.max(dr, dg, db);
             if (maxD > 0.5) {
-                // Scale color but prevent extreme amplification of noise
-                const scale = 255.0 / Math.max(maxD, 20.0); 
-                const r_fluid = dr * scale;
-                const g_fluid = dg * scale;
-                const b_fluid = db * scale;
+                // Fixed reference brightness to prevent flicker
+                const scale = 255.0 / 150.0; 
+                const r_fluid = Math.min(255, dr * scale);
+                const g_fluid = Math.min(255, dg * scale);
+                const b_fluid = Math.min(255, db * scale);
                 
                 // Smooth opacity curve
-                const opacity = Math.min(1.0, maxD / 120.0);
+                const opacity = Math.min(1.0, maxD / 150.0);
                 
-                data[pxIdx] = r_bg + opacity * (r_fluid - r_bg);       
-                data[pxIdx + 1] = g_bg + opacity * (g_fluid - g_bg);  
-                data[pxIdx + 2] = b_bg + opacity * (b_fluid - b_bg); 
+                const targetR = r_bg + opacity * (r_fluid - r_bg);       
+                const targetG = g_bg + opacity * (g_fluid - g_bg);  
+                const targetB = b_bg + opacity * (b_fluid - b_bg); 
+                
+                const blend = 0.35;
+                data[pxIdx]     = prevData[pxIdx]     + blend * (targetR - prevData[pxIdx]);
+                data[pxIdx + 1] = prevData[pxIdx + 1] + blend * (targetG - prevData[pxIdx + 1]);
+                data[pxIdx + 2] = prevData[pxIdx + 2] + blend * (targetB - prevData[pxIdx + 2]);
                 data[pxIdx + 3] = 255;  
             } else {
-                data[pxIdx] = r_bg;
-                data[pxIdx + 1] = g_bg;
-                data[pxIdx + 2] = b_bg;
+                const blend = 0.35;
+                data[pxIdx]     = prevData[pxIdx]     + blend * (r_bg - prevData[pxIdx]);
+                data[pxIdx + 1] = prevData[pxIdx + 1] + blend * (g_bg - prevData[pxIdx + 1]);
+                data[pxIdx + 2] = prevData[pxIdx + 2] + blend * (b_bg - prevData[pxIdx + 2]);
                 data[pxIdx + 3] = 255;
             }
         }
     }
 
     offCtx.putImageData(imgData, 0, 0);
+    prevData.set(data);
     obsCtx.putImageData(obsImgData, 0, 0);
 
     // Draw the low-res physics buffer onto the high-res display canvas smoothly
