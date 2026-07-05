@@ -720,7 +720,7 @@ function render() {
             let pxIdx = (y * N + x) * 4;
             
             // Skip blur on solid walls
-            if (obs[y * N + x] !== 0) {
+            if (obsArray[y * N + x] !== 0) {
                 blurBuffer[pxIdx] = data[pxIdx];
                 blurBuffer[pxIdx + 1] = data[pxIdx + 1];
                 blurBuffer[pxIdx + 2] = data[pxIdx + 2];
