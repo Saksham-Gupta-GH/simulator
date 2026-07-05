@@ -6,7 +6,7 @@ FluidSolver::FluidSolver(int N, float diffusion, float viscosity, float dt)
     : N(N), dt(dt), diff(diffusion), visc(viscosity), vort_strength(0.4f) {
     
     size = N * N;
-    iter = 16;
+    iter = 40;
     
     densityR.resize(size, 0.0f);
     densityG.resize(size, 0.0f);

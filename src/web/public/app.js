@@ -720,8 +720,8 @@ function render() {
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(offscreenCanvas, 0, 0, DISPLAY_SIZE, DISPLAY_SIZE);
     
-    // Draw the obstacles sharply!
-    ctx.imageSmoothingEnabled = false;
+    // Draw the obstacles (smoothed for better aesthetics)
+    ctx.imageSmoothingEnabled = true;
     ctx.drawImage(obsCanvas, 0, 0, DISPLAY_SIZE, DISPLAY_SIZE);
     
     // Draw crisp HD UI overlay
