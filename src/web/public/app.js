@@ -744,8 +744,16 @@ function render() {
         }
     }
     
-    // Copy blurred data back
-    data.set(blurBuffer);
+    // Copy blurred data back (only interior pixels to avoid zeroing borders)
+    for (let y = 1; y < N - 1; y++) {
+        for (let x = 1; x < N - 1; x++) {
+            const pxIdx = (y * N + x) * 4;
+            data[pxIdx]     = blurBuffer[pxIdx];
+            data[pxIdx + 1] = blurBuffer[pxIdx + 1];
+            data[pxIdx + 2] = blurBuffer[pxIdx + 2];
+            data[pxIdx + 3] = 255;
+        }
+    }
 
     offCtx.putImageData(imgData, 0, 0);
     prevData.set(data);
