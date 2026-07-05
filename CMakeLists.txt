@@ -8,14 +8,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Source files
 set(SOURCES
     src/cpp/fluid_solver.cpp
-    src/cpp/simulation.cpp
     src/cpp/bindings.cpp
 )
 
 # Header files
 set(HEADERS
     src/cpp/fluid_solver.h
-    src/cpp/simulation.h
 )
 
 # Standard C++ static library target (enables standard native unit tests or desktop integrations)

@@ -2,7 +2,6 @@
 
 A high-performance, real-time Computational Fluid Dynamics (CFD) Sandbox built with a C++ Navier-Stokes solver and compiled to WebAssembly (WASM) for the browser.
 
-![AeroFlow Engine](https://simulator-phi-five.vercel.app/)
 
 🌍 **Live Demo:** [https://simulator-phi-five.vercel.app](https://simulator-phi-five.vercel.app)
 
