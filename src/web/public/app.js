@@ -23,6 +23,7 @@ offscreenCanvas.height = N;
 const offCtx = offscreenCanvas.getContext('2d');
 let imgData = offCtx.createImageData(N, N);
 let prevData = new Uint8ClampedArray(N * N * 4);
+let blurBuffer = new Uint8ClampedArray(N * N * 4);
 prevData.fill(255); // initialize with white to prevent dark flash
 
 // Low-Res Physics Buffer (Obstacles)
@@ -506,6 +507,7 @@ function initControls() {
         offscreenCanvas.height = N;
         imgData = offCtx.createImageData(N, N);
         prevData = new Uint8ClampedArray(N * N * 4);
+        blurBuffer = new Uint8ClampedArray(N * N * 4);
         prevData.fill(255);
         
         obsCanvas.width = N;
@@ -711,6 +713,39 @@ function render() {
             }
         }
     }
+
+    // Fast 3x3 Box Blur Pass on rendered density
+    for (let y = 1; y < N - 1; y++) {
+        for (let x = 1; x < N - 1; x++) {
+            let pxIdx = (y * N + x) * 4;
+            
+            // Skip blur on solid walls
+            if (obs[y * N + x] !== 0) {
+                blurBuffer[pxIdx] = data[pxIdx];
+                blurBuffer[pxIdx + 1] = data[pxIdx + 1];
+                blurBuffer[pxIdx + 2] = data[pxIdx + 2];
+                blurBuffer[pxIdx + 3] = 255;
+                continue;
+            }
+
+            let r = 0, g = 0, b = 0;
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    let opx = ((y + dy) * N + (x + dx)) * 4;
+                    r += data[opx];
+                    g += data[opx + 1];
+                    b += data[opx + 2];
+                }
+            }
+            blurBuffer[pxIdx] = r / 9;
+            blurBuffer[pxIdx + 1] = g / 9;
+            blurBuffer[pxIdx + 2] = b / 9;
+            blurBuffer[pxIdx + 3] = 255;
+        }
+    }
+    
+    // Copy blurred data back
+    data.set(blurBuffer);
 
     offCtx.putImageData(imgData, 0, 0);
     prevData.set(data);

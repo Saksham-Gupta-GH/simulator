@@ -6,7 +6,7 @@ FluidSolver::FluidSolver(int N, float diffusion, float viscosity, float dt)
     : N(N), dt(dt), diff(diffusion), visc(viscosity), vort_strength(0.4f) {
     
     size = N * N;
-    iter = 40;
+    iter = 20;
     
     densityR.resize(size, 0.0f);
     densityG.resize(size, 0.0f);
@@ -93,14 +93,21 @@ void FluidSolver::set_bnd(int b, std::vector<float>& x) {
 void FluidSolver::lin_solve(int b, std::vector<float>& x, std::vector<float>& x0, float a, float c) {
     float cRecip = 1.0f / c;
     for (int k = 0; k < iter; k++) {
+        // Red pass
         for (int j = 1; j < N - 1; j++) {
-            for (int i = 1; i < N - 1; i++) {
+            int start_i = (j % 2 == 0) ? 2 : 1;
+            for (int i = start_i; i < N - 1; i += 2) {
                 if (!obstacles[IX(i, j)]) {
-                    x[IX(i, j)] =
-                        (x0[IX(i, j)] +
-                         a * (x[IX(i + 1, j)] + x[IX(i - 1, j)] +
-                              x[IX(i, j + 1)] + x[IX(i, j - 1)])) *
-                        cRecip;
+                    x[IX(i, j)] = (x0[IX(i, j)] + a * (x[IX(i + 1, j)] + x[IX(i - 1, j)] + x[IX(i, j + 1)] + x[IX(i, j - 1)])) * cRecip;
+                }
+            }
+        }
+        // Black pass
+        for (int j = 1; j < N - 1; j++) {
+            int start_i = (j % 2 == 0) ? 1 : 2;
+            for (int i = start_i; i < N - 1; i += 2) {
+                if (!obstacles[IX(i, j)]) {
+                    x[IX(i, j)] = (x0[IX(i, j)] + a * (x[IX(i + 1, j)] + x[IX(i - 1, j)] + x[IX(i, j + 1)] + x[IX(i, j - 1)])) * cRecip;
                 }
             }
         }
