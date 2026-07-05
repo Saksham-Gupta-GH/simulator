@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite src/web --host",
     "build": "vite build src/web --outDir ../../dist --emptyOutDir",
-    "compile": "mkdir -p src/web/public/wasm && emcc src/cpp/fluid_solver.cpp src/cpp/bindings.cpp -o src/web/public/wasm/fluid_sim.js -O3 -s WASM=1 -s ALLOW_MEMORY_GROWTH=1 -s MODULARIZE=1 -s EXPORT_NAME='createFluidSimModule' -s EXPORTED_RUNTIME_METHODS=\"['HEAPU8','HEAPF32','wasmMemory']\" --bind"
+    "compile": "mkdir -p src/web/public/wasm && emcc src/cpp/fluid_solver.cpp src/cpp/bindings.cpp -o src/web/public/wasm/fluid_sim.js -O3 -s WASM=1 -s ALLOW_MEMORY_GROWTH=1 -s MODULARIZE=1 -s EXPORT_NAME='createFluidSimModule' -s EXPORTED_RUNTIME_METHODS=\"['HEAPU8','HEAPF32','wasmMemory']\" --bind",
+    "test": "node scripts/smoke.test.js"
   },
   "keywords": [
     "c++",
@@ -20,7 +21,7 @@
   "license": "MIT",
   "devDependencies": {
     "jsdom": "^29.1.1",
-    "playwright": "^1.60.0",
+    "playwright": "^1.61.1",
     "vite": "^5.2.0"
   }
 }

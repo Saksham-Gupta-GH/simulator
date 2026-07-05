@@ -521,6 +521,19 @@ function initControls() {
     const eraseBtn = document.getElementById('btn-erase');
     const clearBtn = document.getElementById('btn-clear');
     
+    // Info Modal Logic
+    const infoModal = document.getElementById('info-modal');
+    document.getElementById('btn-info').addEventListener('click', () => {
+        infoModal.classList.add('active');
+    });
+    document.getElementById('btn-close-info').addEventListener('click', () => {
+        infoModal.classList.remove('active');
+    });
+    infoModal.addEventListener('click', (e) => {
+        if (e.target === infoModal) {
+            infoModal.classList.remove('active');
+        }
+    });
     const shapeCircle = document.getElementById('btn-shape-circle');
     const shapeRect = document.getElementById('btn-shape-rect');
     const shapeTri = document.getElementById('btn-shape-tri');
@@ -572,7 +585,8 @@ function initControls() {
     });
 
     // Interaction Events
-    canvas.addEventListener('mousedown', (e) => {
+    canvas.addEventListener('pointerdown', (e) => {
+        canvas.setPointerCapture(e.pointerId);
         const pos = getPhysicsPos(e);
         lastMousePos = pos;
         
@@ -587,7 +601,7 @@ function initControls() {
         }
     });
 
-    canvas.addEventListener('mousemove', (e) => {
+    canvas.addEventListener('pointermove', (e) => {
         if (!isDrawing) return;
         const pos = getPhysicsPos(e);
         
@@ -597,14 +611,18 @@ function initControls() {
         lastMousePos = pos;
     });
 
-    window.addEventListener('mouseup', () => {
+    const stopDrawing = (e) => {
         if (isDrawing && dragStartPos && lastMousePos && (activeTool === 'rect' || activeTool === 'tri' || activeTool === 'circle')) {
             stampShapeBounds(dragStartPos.x, dragStartPos.y, lastMousePos.x, lastMousePos.y);
         }
         isDrawing = false;
         lastMousePos = null;
         dragStartPos = null;
-    });
+        canvas.releasePointerCapture(e.pointerId);
+    };
+
+    canvas.addEventListener('pointerup', stopDrawing);
+    canvas.addEventListener('pointercancel', stopDrawing);
     
     canvas.addEventListener('contextmenu', e => e.preventDefault());
 }

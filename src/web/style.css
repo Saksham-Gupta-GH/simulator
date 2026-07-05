@@ -227,4 +227,82 @@ canvas {
     box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
     cursor: crosshair;
     border-radius: 4px;
+    touch-action: none;
+}
+
+#fluid-canvas {
+    background: #f8f9fa;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+    cursor: crosshair;
+    touch-action: none; /* Crucial for pointer events on mobile */
+}
+
+/* Info Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.modal-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.modal-content {
+    background: white;
+    width: 90%;
+    max-width: 600px;
+    border-radius: 8px;
+    padding: 24px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    transform: translateY(20px);
+    transition: transform 0.2s ease;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.modal-overlay.active .modal-content {
+    transform: translateY(0);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    border-bottom: 1px solid #dadce0;
+    padding-bottom: 12px;
+}
+
+.modal-header h2 {
+    margin: 0;
+    color: #1a73e8;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: #5f6368;
+}
+
+.modal-body p, .modal-body li {
+    font-size: 0.95rem;
+    color: #3c4043;
+    line-height: 1.5;
+}
+
+.modal-body ul {
+    margin-left: 20px;
+    margin-bottom: 16px;
 }

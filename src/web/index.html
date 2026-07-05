@@ -11,7 +11,10 @@
 <body>
     <div class="md-app-bar">
         <h1><i class="fa-solid fa-wind" style="color:#1a73e8;"></i> AeroFlow <span>Engine</span></h1>
-        <div class="badge">CFD WASM Solver</div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <div class="badge">CFD WASM Solver</div>
+            <button id="btn-info" class="md-btn" style="margin: 0; padding: 4px 12px; background: transparent; color: #1a73e8; border: 1px solid #1a73e8;"><i class="fa-solid fa-circle-question"></i> How it works</button>
+        </div>
     </div>
 
     <div class="app-container">
@@ -106,6 +109,25 @@
         <!-- Main Canvas -->
         <div class="canvas-container">
             <canvas id="fluid-canvas" width="600" height="600"></canvas>
+        </div>
+    </div>
+
+    <!-- Architecture Info Modal -->
+    <div id="info-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fa-solid fa-microchip"></i> Engine Architecture</h2>
+                <button id="btn-close-info" class="modal-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <p><strong>AeroFlow Engine</strong> is a high-performance, real-time Computational Fluid Dynamics (CFD) sandbox.</p>
+                <p>Instead of running in JavaScript, the heavy lifting is done in <strong>C++17</strong> and compiled to <strong>WebAssembly (WASM)</strong>, running natively in the browser.</p>
+                <ul>
+                    <li><strong>Solver:</strong> Uses Jos Stam's "Stable Fluids" method with Gauss-Seidel relaxation to solve the Navier-Stokes equations for incompressible fluid flow.</li>
+                    <li><strong>Vorticity Confinement:</strong> Mathematically recalculates lost curl forces to preserve energetic, highly detailed turbulence and smoke swirls.</li>
+                    <li><strong>Zero-Copy Memory:</strong> The C++ engine and JS frontend share a raw memory buffer. The physics simulation runs on a low-res grid, while a JS HTML5 Canvas overlays crisp, high-res UI and shapes dynamically.</li>
+                </ul>
+            </div>
         </div>
     </div>
 
